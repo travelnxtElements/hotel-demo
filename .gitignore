@@ -1,0 +1,7 @@
+_site
+bower_components
+*.log
+node_modules
+_publish
+*.swp
+

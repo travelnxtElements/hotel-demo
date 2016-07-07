@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Hotel Search Demo</title>
+
+  <link rel="stylesheet" href="main.css">
+
+  <script src="bower_components/webcomponentsjs/webcomponents-lite.js"></script>
+
+  <link rel="import" href="elements.html">
+  <!-- <style is="custom-style" include="shared-styles"></style> -->
+</head>
+
+<body unresolved>
+
+  <template is="dom-bind" id="app">
+    <t-hotel-search id="searchComponent">
+      <t-hotel-search-provider id="searchProvider"></t-hotel-search-provider>
+    </t-hotel-search>
+
+    <t-mystique-auth name="mystiquebase" cid="1485"
+      token-response="{{tokenResponse}}"
+      url="[[apiEndpoints.auth]]">
+    </t-mystique-auth>
+
+    <paper-toast id="toast"></paper-toast>
+  </template>
+
+  <script src="app.js"></script>
+
+</body>
+
+</html>

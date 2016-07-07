@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <title>Hotel Search Demo</title>
 
-  <link rel="stylesheet" href="main.css">
+  <!-- <link rel="stylesheet" href="main.css"> -->
 
   <script src="bower_components/webcomponentsjs/webcomponents-lite.min.js"></script>
 
@@ -22,13 +22,14 @@
 
     <t-mystique-auth name="mystiquebase" cid="1485"
       token-response="{{tokenResponse}}"
-      url="[[apiEndpoints.auth]]">
+      url="[[authApiEndpoint]]">
     </t-mystique-auth>
 
     <paper-toast id="toast"></paper-toast>
   </template>
 
-  <script src="app.js"></script>
+  <script src="base.js"></script>
+  <script src="search.js"></script>
 
 </body>
 

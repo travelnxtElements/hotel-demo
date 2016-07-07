@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Hotel Search Demo</title>
+
+  <!-- <link rel="stylesheet" href="main.css"> -->
+
+  <script src="bower_components/webcomponentsjs/webcomponents-lite.min.js"></script>
+
+  <link rel="import" href="elements.html">
+  <!-- <style is="custom-style" include="shared-styles"></style> -->
+</head>
+
+<body unresolved>
+
+  <template is="dom-bind" id="app">
+    <t-list search-icon="icons:search"
+        filter-icon="icons:filter-list"
+        token-param="inventories"
+        currency="USD"
+        sort-by="+desc"
+        with-filter
+        with-sorting
+        auto
+        no-results-filtered-message="Couldn't find any hotels with your filters"
+        no-results-found-message="Couldn't find any hotels with your search"
+        no-results-filtered-for-search-term-message="Couldn't find any hotel names containing 'SEARCHTERM’.">
+
+        <template>
+            <t-hotel-itinerary-item itinerary="{{item}}">
+            </t-hotel-itinerary-item>        
+        </template>
+    </t-list>
+  </template>
+
+  <script src="base.js"></script>
+  <script src="results.js"></script>
+
+</body>
+
+</html>

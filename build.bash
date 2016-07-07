@@ -12,8 +12,8 @@ mkcp() {
 printf "%-20s: Create _site dir if not present\n" "Create"
 mkdir -p _site
 
-printf "%-20s: Copy the html files to _site dir\n" "Copy"
-cp *.html _site
+printf "%-20s: Copy the files to _site dir\n" "Copy"
+cp *.{js,css,html} _site
 
 printf "%-20s: Copy the polyfill\n" "Copy"
 mkcp "bower_components/webcomponentsjs/webcomponents-lite.min.js"
@@ -33,7 +33,7 @@ then
     git clone --branch=gh-pages --depth=1 "$remote" _publish && cd _publish
 
     printf "%-20s: Copy the build artifacts from _site dir\n" "Copy"
-    cp ../_site/*.{html,js} ./
+    cp ../_site/*.{js,css,html} ./
 
     printf "%-20s: Add files, commit and push\n" "Push"
     git add .

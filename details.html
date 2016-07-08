@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Hotel Search Demo</title>
+
+  <!-- <link rel="stylesheet" href="main.css"> -->
+
+  <script src="bower_components/webcomponentsjs/webcomponents-lite.min.js"></script>
+
+  <link rel="import" href="elements.html">
+  <!-- <style is="custom-style" include="shared-styles"></style> -->
+  <style is="custom-style" include="travel-element-styles"></style>
+
+  <style>
+    body {
+      font-family: 'Open Sans'
+    }
+  </style>
+</head>
+
+<body unresolved>
+
+  <template is="dom-bind" id="app">
+    <template is="dom-if" if="[[imgzoomed]]">
+      <div style="height:400px;"></div>
+    </template>
+    <t-image-carousel
+      light-box
+      sizing="cover"
+      loading-icon="maps:hotel"
+      zoomed="{{imgzoomed}}"
+      data="{{carouselData}}"
+      height="400">
+    </t-image-carousel>
+    <t-tabs selected="{{activeTab}}" noink inverted alignment="fullbleed" >
+      <t-tab>Rooms</t-tab>
+      <t-tab>Details</t-tab>
+    </t-tabs>
+    <iron-pages selected="{{activeTab}}">
+      <div>
+        <t-hotel-room-list itinerary="{{itinerary}}">
+          <t-hotel-room-list-provider id="roomProvider"></t-hotel-room-list-provider>
+          <t-hotel-room-policy-provider id="policyProvider"></t-hotel-room-policy-provider>
+        </t-hotel-room-list>
+      </div>
+      <div class="details-tab">
+        <div class="section-small font-12 secondary-text">
+          <template is="dom-repeat" items="{{itinerary.descriptions}}">
+            <template is="dom-if" if="{{item.key}}">
+              <div class="margin-bottom font-14 primary-text font-semi">{{item.key}} </div>
+            </template>
+            <div class="margin-bottom">{{item.value}}</div>
+            <div class="border-bottom margin-bottom"></div>
+          </template>
+          <template is="dom-if" if="{{displayAmenities.length}}">
+            <div class="margin-bottom font-semi font-14 primary-text">Amenities</div>
+            <div class="layout horizontal wrap">
+              <template is="dom-repeat" items="{{displayAmenities}}" as="amenity">
+                <div class="margin-bottom list-item-half">[[amenity.description]]</div>
+              </template>
+            </div>
+              <template is="dom-if" if="{{showMoreAmenities}}">
+                <a href="javascript:void(0);"
+                  class="link-style block margin-bottom"
+                  on-click="onShowAmenities">more</a>
+              </template>
+              <template is="dom-if" if="{{!showMoreAmenities}}">
+                <a href="javascript:void(0);"
+                  class="link-style block margin-bottom"
+                  on-click="onShowAmenities">less</a>
+              </template>
+            <div class="border-bottom margin-bottom"></div>
+          </template>
+          <template is="dom-if" if="{{displayPOI.length}}">
+            <div class="margin-bottom font-semi font-14 primary-text">Points of interest</div>
+            <div class="layout horizontal wrap">
+              <template is="dom-repeat" items="{{displayPOI}}" as="poi">
+                <div class="margin-bottom list-item-half">[[poi]]</div>
+              </template>
+            </div>
+              <template is="dom-if" if="{{showMorePointsOfInterest}}">
+                <a href="javascript:void(0);"
+                  class="link-style block margin-bottom"
+                  on-click="onShowPOI">more</a>
+              </template>
+              <template is="dom-if" if="{{!showMorePointsOfInterest}}">
+                <a href="javascript:void(0);"
+                   class="link-style block margin-bottom"
+                  on-click="onShowPOI">less</a>
+              </template>
+            <div class="border-bottom margin-bottom"></div>
+          </template>
+        </div>
+      </div>
+    </iron-pages>
+  </template>
+
+  <script src="base.js"></script>
+  <script src="details.js"></script>
+
+</body>
+
+</html>

@@ -46,11 +46,6 @@
       filter.querySelector('t-filter').generateFilter();
     });
 
-    results.addEventListener('', function(ev) {
-      let filter = Polymer.dom(document.querySelector('t-list').root);
-      filter.querySelector('t-filter').generateFilter();
-    });
-
     let toast = document.querySelector('#toast');
     let singleItineraryCall = document.querySelector('#singleItineraryCall');
 

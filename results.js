@@ -46,6 +46,35 @@
       filter.querySelector('t-filter').generateFilter();
     });
 
-    // results.addEventListener('item-selected', _resultSelected);
+    results.addEventListener('', function(ev) {
+      let filter = Polymer.dom(document.querySelector('t-list').root);
+      filter.querySelector('t-filter').generateFilter();
+    });
+
+    let toast = document.querySelector('#toast');
+    let singleItineraryCall = document.querySelector('#singleItineraryCall');
+
+    results.addEventListener('item-selected', function(ev) {
+      let apiEndpoint = `api/hotel/results/${sid}/rates`;
+      singleItineraryCall.url = genUrl(baseApiEndpoint, apiEndpoint, {
+        token: token, "$filter": `Id eq '${event.detail.id}'`
+      });
+
+      singleItineraryCall.generateRequest();
+    });
   });
+
+  app.singleItinerarySuccess = function(ev) {
+    let toast = document.querySelector('#toast');
+
+    try {
+      HotelDemo.setItem('itinerary', event.detail.response.inventories[0]);
+      HotelDemo.redirectToDetails();
+    } catch (e) {
+      toast.text = 'Bad response from api';
+      toast.open();
+    }
+  };
+
+  app.singleItineraryError = HotelDemo.errorHandler.bind(app);
 })(window, document);

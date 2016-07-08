@@ -35,6 +35,14 @@
     window.location.href = `${url}results.html?sid=${sid}&token=${token}`;
   };
 
+  HotelDemo.redirectToDetails = function() {
+    let itinerary = HotelDemo.getItem('itinerary');
+    let sid = HotelDemo.getItem('sid');
+    let url = window.location.href.replace(/results\.html.*/, '');
+
+    window.location.href = `${url}details.html?sid=${sid}&hid=${itinerary.id}`;
+  };
+
   HotelDemo.genUrl = function(baseUrl, path, params) {
     params = Object.keys(params)
       .map(key => `${key}=${params[key]}`)
@@ -43,5 +51,19 @@
     params = params ? '?' + params : params;
 
     return baseUrl + path + params;
+  };
+
+  HotelDemo.errorHandler = function(ev) {
+    let toast = document.querySelector('#toast');
+    let message;
+
+    try {
+      message = ev.detail.response.status.message;
+    } catch (e) {
+      message = 'Something broke while handling the request';
+    } finally {
+      toast.text = message;
+      toast.open();
+    }
   };
 })(window, document);

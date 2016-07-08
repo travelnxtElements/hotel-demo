@@ -33,6 +33,16 @@
             </t-hotel-itinerary-item>        
         </template>
     </t-list>
+
+    <paper-toast id="toast"></paper-toast>
+
+    <iron-ajax id="singleItineraryCall"
+      method="GET"
+      content-type="application/json"
+      handle-as="json"
+      on-response="singleItinerarySuccess"
+      on-error="singleItineraryError">
+    </iron-ajax>
   </template>
 
   <script src="base.js"></script>

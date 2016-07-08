@@ -48,17 +48,6 @@
       }
     };
 
-    provider._errorHandler = function(ev) {
-      let message;
-
-      try {
-        message = ev.detail.response.status.message;
-      } catch (e) {
-        message = 'Something broke while handling the request';
-      } finally {
-        toast.text = message;
-        toast.open();
-      }
-    };
+    provider._errorHandler = HotelDemo.errorHandler;
   });
 })(window, document);

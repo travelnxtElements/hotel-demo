@@ -24,6 +24,14 @@
     roomProvider.searchId = sid;
     roomProvider.inventoryId = itinerary.id;
 
+    let singleAvail = Polymer.dom(roomProvider.root).querySelector('iron-ajax');
+
+    //FIXME: iron-list won't render the whole list
+    singleAvail.addEventListener('response', function(ev) {
+      let list = Polymer.dom(roomList.root).querySelector('iron-list');
+      list.fire('iron-resize');
+    });
+
     let policyProvider = Polymer.dom(roomList).querySelector('#policyProvider');
 
     policyProvider.apiBaseUrl = baseApiEndpoint;
@@ -33,13 +41,8 @@
     policyProvider.inventoryId = itinerary.id;
 
     roomList.addEventListener('room-select', function(ev) {
-      try {
-        HotelDemo.setItem('room', ev.detail);
-        HotelDemo.redirectToConfirmation();
-      } catch(e) {
-        toast.text = 'Bad response from api';
-        toast.open();
-      }
+      HotelDemo.setItem('room', ev.detail);
+      HotelDemo.redirectToConfirmation();
     });
 
     roomList.showRooms();

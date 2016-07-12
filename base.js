@@ -28,11 +28,10 @@
   };
 
   HotelDemo.redirectToResults = function() {
-    let token = HotelDemo.getItem('token');
     let sid = HotelDemo.getItem('sid');
     let url = window.location.href;
 
-    window.location.href = `${url}results.html?sid=${sid}&token=${token}`;
+    window.location.href = `${url}results.html?sid=${sid}`;
   };
 
   HotelDemo.redirectToDetails = function() {

@@ -13,6 +13,10 @@
     let provider = Polymer.dom(search).querySelector('#searchProvider');
     let toast = document.getElementById('toast');
 
+    app.apiBaseUrl = baseApiEndpoint;
+    app.apiSearchUrl = 'api/hotel/search';
+
+    // FIXME: t-mystique-auth should extract the token from response
     mysAuth.addEventListener('token-response-changed', function(ev) {
       let token;
 
@@ -24,20 +28,22 @@
       }
 
       HotelDemo.setItem('token', token);
-      app.token = token;
+      app.authToken = token;
 
+      // FIXME: `location` is the autosuggest component
+      // hotel search should expose api for this
       search.$.location.dataUrl = `${baseApiEndpoint}api/content/autosuggest/`;
       search.$.location.queryParams = `token=${token}`;
-
-      provider.apiBaseUrl = baseApiEndpoint;
-      provider.apiRelativeUrl = 'api/hotel/search';
-      provider.authToken = token;
     });
 
+    // FIXME: the event name `t-hotel-search` doesn't make any sense
+    // should you have to do this wiring manually?
     search.addEventListener('t-hotel-search', function(ev) {
       provider.search(ev.detail);
     });
 
+    // FIXME: the provider expects a function by following name
+    // it should fire an event which can be set up declaratively through markup
     provider._successHandler = function(ev) {
       try {
         HotelDemo.setItem('sid', ev.detail.response.searchId);

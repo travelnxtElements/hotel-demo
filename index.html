@@ -17,7 +17,11 @@
 
   <template is="dom-bind" id="app">
     <t-hotel-search id="searchComponent">
-      <t-hotel-search-provider id="searchProvider"></t-hotel-search-provider>
+      <t-hotel-search-provider id="searchProvider"
+        api-base-url="{{apiBaseUrl}}"
+        api-relative-url="{{apiSearchUrl}}"
+        auth-token="{{authToken}}">
+      </t-hotel-search-provider>
     </t-hotel-search>
 
     <t-mystique-auth name="mystiquebase" cid="1485"

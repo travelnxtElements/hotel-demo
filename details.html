@@ -41,8 +41,20 @@
     <iron-pages selected="{{activeTab}}">
       <div>
         <t-hotel-room-list itinerary="{{itinerary}}">
-          <t-hotel-room-list-provider id="roomProvider"></t-hotel-room-list-provider>
-          <t-hotel-room-policy-provider id="policyProvider"></t-hotel-room-policy-provider>
+          <t-hotel-room-list-provider id="roomProvider"
+            api-base-url="{{apiBaseUrl}}"
+            api-relative-url="{{apiSingleUrl}}"
+            auth-token="{{authToken}}"
+            search-id="{{searchId}}"
+            inventory-id="{{inventoryId}}">
+          </t-hotel-room-list-provider>
+          <t-hotel-room-policy-provider id="policyProvider"
+            api-base-url="{{apiBaseUrl}}"
+            api-relative-url="{{apiPoliciesUrl}}"
+            auth-token="{{authToken}}"
+            search-id="{{searchId}}"
+            inventory-id="{{inventoryId}}">
+          </t-hotel-room-policy-provider>
         </t-hotel-room-list>
       </div>
       <div class="details-tab">

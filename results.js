@@ -41,6 +41,8 @@
 
     results.generateList();
 
+    // FIXME: you shouldn't have to run `generateFilter` this way
+    // you should be able to pass and configure your own set of filters
     results.addEventListener('list-population', function(ev) {
       let filter = Polymer.dom(document.querySelector('t-list').root);
       filter.querySelector('t-filter').generateFilter();

@@ -42,6 +42,14 @@
       provider.search(ev.detail);
     });
 
+    provider.addEventListener('request', function(ev) {
+      if (!ev.detail.body) {
+        return;
+      }
+
+      HotelDemo.setItem('criteria', JSON.parse(ev.detail.body));
+    });
+
     // FIXME: the provider expects a function by following name
     // it should fire an event which can be set up declaratively through markup
     provider._successHandler = function(ev) {

@@ -2,7 +2,7 @@
   window.HotelDemo = window.HotelDemo || {};
   let HotelDemo = window.HotelDemo;
 
-  HotelDemo.baseApiEndpoint = 'http://qa-mystiquecode.tavisca.com/';
+  HotelDemo.baseApiEndpoint = 'http://demo.travelnxt.com/';
 
   HotelDemo.getItem = function(key) {
     let search = window.location.search;
@@ -27,36 +27,43 @@
     window.sessionStorage.setItem(`hd-${key}`, value);
   };
 
-  HotelDemo.redirectToResults = function() {
-    let sid = HotelDemo.getItem('sid');
-    let url = window.location.href;
-
-    window.location.href = `${url}results.html?sid=${sid}`;
-  };
-
-  HotelDemo.redirectToDetails = function() {
-    let itinerary = HotelDemo.getItem('itinerary');
-    let sid = HotelDemo.getItem('sid');
-    let url = window.location.href.replace(/results\.html.*/, '');
-
-    window.location.href = `${url}details.html?sid=${sid}&hid=${itinerary.id}`;
-  };
-
-  HotelDemo.redirectToConfirmation = function() {
-    let rid = HotelDemo.getItem('room').id;
-    let url = window.location.href.replace(/details\.html.*/, '');
-
-    window.location.href = `${url}confirmation.html?rid=${rid}`;
-  };
-
   HotelDemo.genUrl = function(baseUrl, path, params) {
-    params = Object.keys(params)
+    params = Object.keys(params || {})
       .map(key => `${key}=${params[key]}`)
       .join('&');
 
     params = params ? '?' + params : params;
 
     return baseUrl + path + params;
+  };
+
+  function redirect(page, params) {
+    let url = window.location.href.replace(/\/\w+\.html.*/, `/`);
+
+    window.location = HotelDemo.genUrl(url, `${page}.html`, params);
+  };
+
+  HotelDemo.redirectToResults = function() {
+    redirect('results', { sid: HotelDemo.getItem('sid') });
+  };
+
+  HotelDemo.redirectToDetails = function() {
+    let itinerary = HotelDemo.getItem('itinerary');
+    let sid = HotelDemo.getItem('sid');
+
+    redirect('details', { sid: sid, hid: itinerary.id });
+  };
+
+  HotelDemo.redirectToGuestInfo = function() {
+    redirect('guestinfo');
+  };
+
+  HotelDemo.redirectToPayment = function() {
+    redirect('payment');
+  };
+
+  HotelDemo.redirectToConfirmation = function() {
+    redirect('confirmation');
   };
 
   HotelDemo.errorHandler = function(ev) {

@@ -107,6 +107,27 @@
         </div>
       </div>
     </iron-pages>
+
+    <iron-ajax id="apiDeleteCart"
+      url="{{apiDeleteCartUrl}}"
+      method="DELETE"
+      content-type="application/json"
+      handle-as="json"
+      on-response="deleteCartComplete"
+      on-error="deleteCartError">
+    </iron-ajax>
+
+    <iron-ajax id="apiPricing"
+      url="{{apiPricingUrl}}"
+      body="{{pricingCallBody}}"
+      method="POST"
+      content-type="application/json"
+      handle-as="json"
+      on-response="pricingComplete"
+      on-error="pricingError">
+    </iron-ajax>
+
+    <paper-toast id="toast"></paper-toast>
   </template>
 
   <script src="base.js"></script>

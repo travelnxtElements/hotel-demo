@@ -5,17 +5,15 @@
   <meta charset="utf-8">
   <title>Hotel Search Demo</title>
 
-  <!-- <link rel="stylesheet" href="main.css"> -->
-
   <script src="bower_components/webcomponentsjs/webcomponents-lite.min.js"></script>
 
   <link rel="import" href="elements.html">
-  <!-- <style is="custom-style" include="shared-styles"></style> -->
 </head>
 
 <body unresolved>
 
   <template is="dom-bind" id="app">
+
     <t-list search-icon="icons:search"
       filter-icon="icons:filter-list"
       token-param="inventories"
@@ -33,8 +31,6 @@
       </template>
     </t-list>
 
-    <paper-toast id="toast"></paper-toast>
-
     <iron-ajax id="singleItineraryCall"
       method="GET"
       content-type="application/json"
@@ -42,6 +38,9 @@
       on-response="singleItinerarySuccess"
       on-error="singleItineraryError">
     </iron-ajax>
+
+    <paper-toast id="toast"></paper-toast>
+
   </template>
 
   <script src="base.js"></script>

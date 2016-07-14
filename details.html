@@ -5,12 +5,9 @@
   <meta charset="utf-8">
   <title>Hotel Search Demo</title>
 
-  <!-- <link rel="stylesheet" href="main.css"> -->
-
   <script src="bower_components/webcomponentsjs/webcomponents-lite.min.js"></script>
 
   <link rel="import" href="elements.html">
-  <!-- <style is="custom-style" include="shared-styles"></style> -->
   <style is="custom-style" include="travel-element-styles"></style>
 
   <style>
@@ -23,6 +20,7 @@
 <body unresolved>
 
   <template is="dom-bind" id="app">
+
     <template is="dom-if" if="[[imgzoomed]]">
       <div style="height:400px;"></div>
     </template>
@@ -40,7 +38,7 @@
     </t-tabs>
     <iron-pages selected="{{activeTab}}">
       <div>
-        <t-hotel-room-list itinerary="{{itinerary}}">
+        <t-hotel-room-list id="roomList" itinerary="{{itinerary}}">
           <t-hotel-room-list-provider id="roomProvider"
             api-base-url="{{apiBaseUrl}}"
             api-relative-url="{{apiSingleUrl}}"
@@ -128,6 +126,7 @@
     </iron-ajax>
 
     <paper-toast id="toast"></paper-toast>
+
   </template>
 
   <script src="base.js"></script>

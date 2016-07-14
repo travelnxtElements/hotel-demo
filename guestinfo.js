@@ -2,6 +2,7 @@
   window.HotelDemo = window.HotelDemo || {};
   let HotelDemo = window.HotelDemo;
 
+  // FIXME: is it ok for this to be here?
   function validateInput() {
     let paxSegments = document.querySelectorAll('t-passenger-segment');
     let communication = document.querySelector('t-communication');
@@ -13,6 +14,7 @@
     return communication.validate() && paxValid;
   }
 
+  // FIXME: this should be in api response decorator component
   function getHeader(type, displayId, age) {
     if (displayId === 0) {
       return 'Primary Guest';
@@ -28,6 +30,8 @@
     }
   }
 
+  // translator to add properties on api response
+  // FIXME: this should be in api response decorator component
   function generateGeusts(ages, idOffset, type) {
     idOffset = idOffset || 0;
     type = type || 'Adult';
@@ -64,7 +68,7 @@
   let criteria = HotelDemo.getItem('criteria');
   let cartItem = HotelDemo.getItem('cart-item');
 
-  app.phoneNo = '';
+  app.phoneNumber = '';
   app.email = '';
 
   let showAllGuests = cartItem.inventory.allPassengersInfoRequired;
@@ -73,7 +77,7 @@
   app.onContinue = function(ev) {
     HotelDemo.setItem('guestinfo', {
       guests: app.guests,
-      phoneNo: app.phoneNo,
+      phoneNumber: app.phoneNumber,
       email: app.email
     });
 

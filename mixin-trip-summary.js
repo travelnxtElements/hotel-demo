@@ -2,6 +2,8 @@
   window.HotelDemo = window.HotelDemo || {};
   let HotelDemo = window.HotelDemo;
 
+  // FIXME: you shouldn't have to write this function.
+  // only providing the template of the date format should suffice
   function getDisplayDate(dateVal) {
     if (!dateVal) {
       return dateVal;
@@ -22,6 +24,9 @@
     return (`${date} ${month} ${dateVal.getFullYear()}, ${dayNames[dateVal.getDay()]}`).trim();
   }
 
+  // FIXME: this should be in api response decorator component
+  // frequently you have to add properties to the api response that
+  // general enough to warrant an component that adds them to the response
   function dateDiff(fromDate, toDate) {
     let diff = toDate - fromDate;
     let divideBy = (24 * 60 * 60 * 1000);

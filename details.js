@@ -29,7 +29,7 @@
     apiEndpoint = 'api/shoppingcart/add';
     app.apiPricingUrl = genUrl(apiEndpoint, { token: token });
 
-    let roomList = document.querySelector('t-hotel-room-list');
+    let roomList = app.$.roomList;
 
     roomList.addEventListener('room-select', function(ev) {
       HotelDemo.setItem('room', ev.detail);

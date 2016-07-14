@@ -2,6 +2,7 @@
   window.HotelDemo = window.HotelDemo || {};
   let HotelDemo = window.HotelDemo;
 
+  // FIXME: this should be in api response decorator component
   function getBookingRequest(inventory, glist, cinfo, address) {
     let request = {
       inventoriesInfo: [{
@@ -41,6 +42,9 @@
     return request;
   }
 
+  // this is the translator for converting to an object that can be sent
+  // in the api for booking request
+  // FIXME: this should be in api response decorator component
   function getGlist() {
     let guestinfo = HotelDemo.getItem('guestinfo');
 
@@ -63,10 +67,7 @@
   let baseApiEndpoint = HotelDemo.baseApiEndpoint;
   let genUrl = HotelDemo.genUrl.bind(null, baseApiEndpoint);
 
-  let sid = HotelDemo.getItem('sid');
-  let itinerary = HotelDemo.getItem('itinerary');
   let token = HotelDemo.getItem('token');
-  let criteria = HotelDemo.getItem('criteria');
   let cartItem = HotelDemo.getItem('cart-item');
 
   // NOTE: Adds the itinerary description properties on `app`

@@ -4,7 +4,7 @@
 
   let app = document.getElementById('app');
   let baseApiEndpoint = HotelDemo.baseApiEndpoint;
-  let genUrl = HotelDemo.genUrl;
+  let genUrl = HotelDemo.genUrl.bind(null, baseApiEndpoint);
 
   app.addEventListener('dom-change', function() {
     let token = HotelDemo.getItem('token');
@@ -16,20 +16,21 @@
     ];
 
     let apiEndpoint = `api/hotel/results/${sid}/rates`;
-    results.dataApi = genUrl(baseApiEndpoint, apiEndpoint, {
+    results.dataApi = genUrl(apiEndpoint, {
       top: 20, token: token, "$select": selections.join(',')
     });
 
     apiEndpoint = `api/hotel/filter/${sid}/rates`;
-    results.filterApi = genUrl(baseApiEndpoint, apiEndpoint, {
+    results.filterApi = genUrl(apiEndpoint, {
       token: token
     });
 
     apiEndpoint = `api/hotel/results/filter/${sid}/rates`;
-    results.filterResultsApi = genUrl(baseApiEndpoint, apiEndpoint, {
+    results.filterResultsApi = genUrl(apiEndpoint, {
       top: 20, token: token, "$select": selections.join(',')
     });
 
+    // TODO: are this parameters common to any hotel results call (mystique)
     results.sortParams = [
       { "key": "Name", "value": "$orderby=Name" },
       { "key": "Rating", "value": "$orderby=Rating" , "default": true },
@@ -53,7 +54,7 @@
 
     results.addEventListener('item-selected', function(ev) {
       let apiEndpoint = `api/hotel/results/${sid}/rates`;
-      singleItineraryCall.url = genUrl(baseApiEndpoint, apiEndpoint, {
+      singleItineraryCall.url = genUrl(apiEndpoint, {
         token: token, "$filter": `Id eq '${event.detail.id}'`
       });
 
@@ -68,7 +69,7 @@
       HotelDemo.setItem('itinerary', event.detail.response.inventories[0]);
       HotelDemo.redirectToDetails();
     } catch (e) {
-      toast.text = 'Bad response from api';
+      toast.text = 'Bad response from itinerary api';
       toast.open();
     }
   };

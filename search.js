@@ -37,7 +37,7 @@
     });
 
     // FIXME: the event name `t-hotel-search` doesn't make any sense
-    // should you have to do this wiring manually?
+    // TODO: should you have to do this wiring manually?
     search.addEventListener('t-hotel-search', function(ev) {
       provider.search(ev.detail);
     });
@@ -57,7 +57,7 @@
         HotelDemo.setItem('sid', ev.detail.response.searchId);
         HotelDemo.redirectToResults();
       } catch (e) {
-        toast.text = 'Bad response from api';
+        toast.text = 'Bad response from search api';
         toast.open();
       }
     };

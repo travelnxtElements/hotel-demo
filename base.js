@@ -43,28 +43,11 @@
     window.location = HotelDemo.genUrl(url, `${page}.html`, params);
   };
 
-  HotelDemo.redirectToResults = function() {
-    redirect('results', { sid: HotelDemo.getItem('sid') });
-  };
-
-  HotelDemo.redirectToDetails = function() {
-    let itinerary = HotelDemo.getItem('itinerary');
-    let sid = HotelDemo.getItem('sid');
-
-    redirect('details', { sid: sid, hid: itinerary.id });
-  };
-
-  HotelDemo.redirectToGuestInfo = function() {
-    redirect('guestinfo');
-  };
-
-  HotelDemo.redirectToPayment = function() {
-    redirect('payment');
-  };
-
-  HotelDemo.redirectToConfirmation = function() {
-    redirect('confirmation');
-  };
+  HotelDemo.redirectToResults = redirect.bind(null, 'results');
+  HotelDemo.redirectToDetails = redirect.bind(null, 'details');
+  HotelDemo.redirectToGuestInfo = redirect.bind(null, 'guestinfo');
+  HotelDemo.redirectToPayment = redirect.bind(null, 'payment');
+  HotelDemo.redirectToConfirmation = redirect.bind(null, 'confirmation');
 
   HotelDemo.errorHandler = function(ev) {
     let toast = document.querySelector('#toast');

@@ -40,6 +40,11 @@
     // TODO: should you have to do this wiring manually?
     search.addEventListener('t-hotel-search', function(ev) {
       provider.search(ev.detail);
+
+      // FIXME: why was this removed from code in `t-hotel-search`
+      // look at the commit `52ee94d1`
+      search.$.search.label = 'Searching Hotels...';
+      search.$.search.disabled = true;
     });
 
     provider.addEventListener('request', function(ev) {
@@ -62,6 +67,11 @@
       }
     };
 
-    provider._errorHandler = HotelDemo.errorHandler;
+    provider._errorHandler = function(ev) {
+      search.$.search.label = 'Search Hotels';
+      search.$.search.disabled = false;
+
+      HotelDemo.errorHandler.call(app, ev);
+    };
   });
 })(window, document);

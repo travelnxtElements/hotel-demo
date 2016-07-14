@@ -6,6 +6,8 @@
   let baseApiEndpoint = HotelDemo.baseApiEndpoint;
   let genUrl = HotelDemo.genUrl.bind(null, baseApiEndpoint);
 
+  app.loading = false;
+
   app.addEventListener('dom-change', function() {
     let token = HotelDemo.getItem('token');
     let sid = HotelDemo.getItem('sid');
@@ -53,6 +55,8 @@
     let singleItineraryCall = document.querySelector('#singleItineraryCall');
 
     results.addEventListener('item-selected', function(ev) {
+      app.loading = true;
+
       let apiEndpoint = `api/hotel/results/${sid}/rates`;
       singleItineraryCall.url = genUrl(apiEndpoint, {
         token: token, "$filter": `Id eq '${event.detail.id}'`
@@ -67,6 +71,8 @@
 
     try {
       HotelDemo.setItem('itinerary', event.detail.response.inventories[0]);
+
+      app.loading = false;
       HotelDemo.redirectToDetails();
     } catch (e) {
       toast.text = 'Bad response from itinerary api';
@@ -74,5 +80,8 @@
     }
   };
 
-  app.singleItineraryError = HotelDemo.errorHandler.bind(app);
+  app.singleItineraryError = function(ev) {
+    app.loading = false;
+    HotelDemo.errorHandler.call(app);
+  };
 })(window, document);

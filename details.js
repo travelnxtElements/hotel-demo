@@ -13,6 +13,7 @@
   app.addEventListener('dom-change', function() {
     let toast = document.querySelector('#toast');
 
+    app.loading = false;
     app.carouselData = itinerary.photoUrls;
     app.itinerary = itinerary;
     app.activeTab = 0;
@@ -42,6 +43,7 @@
         }]
       });
 
+      app.loading = true;
       app.$.apiDeleteCart.generateRequest();
     });
 
@@ -71,6 +73,8 @@
     try {
       let cartItem = event.detail.response.addToCartItemResult[0];
       HotelDemo.setItem('cart-item', cartItem);
+
+      app.loading = false;
       HotelDemo.redirectToGuestInfo();
     } catch (e) {
       toast.text = 'Bad response from pricing api';
@@ -78,6 +82,10 @@
     }
   };
 
-  app.deleteCartError = HotelDemo.errorHandler.bind(app);
-  app.pricingError = HotelDemo.errorHandler.bind(app);
+  function errorHandler(ev) {
+    app.loading = false;
+    HotelDemo.errorHandler.call(app, ev);
+  }
+
+  app.deleteCartError = app.pricingError = errorHandler;
 })(window, document);

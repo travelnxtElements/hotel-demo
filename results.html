@@ -8,6 +8,16 @@
   <script src="bower_components/webcomponentsjs/webcomponents-lite.min.js"></script>
 
   <link rel="import" href="elements.html">
+
+  <style>
+    body {
+      font-family: 'Open Sans';
+    }
+
+    t-hotel-itinerary-item {
+      cursor: pointer;
+    }
+  </style>
 </head>
 
 <body unresolved>
@@ -38,6 +48,12 @@
       on-response="singleItinerarySuccess"
       on-error="singleItineraryError">
     </iron-ajax>
+
+    <template is="dom-if" if="[[loading]]">
+      <t-fullpage-loader active>
+        <div>Please do not refresh the page, we are fetching details of the hotel...</div>
+      </t-fullpage-loader>
+    </template>
 
     <paper-toast id="toast"></paper-toast>
 

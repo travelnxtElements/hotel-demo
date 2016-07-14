@@ -125,6 +125,12 @@
       on-error="pricingError">
     </iron-ajax>
 
+    <template is="dom-if" if="[[loading]]">
+      <t-fullpage-loader active>
+        <div>Please do not refresh the page, we are checking availability of the room...</div>
+      </t-fullpage-loader>
+    </template>
+
     <paper-toast id="toast"></paper-toast>
 
   </template>

@@ -37,10 +37,14 @@
     return baseUrl + path + params;
   };
 
-  function redirect(page, params) {
+  HotelDemo.getPageUrl = function(page, params) {
     let url = window.location.href.replace(/\/\w+\.html.*/, `/`);
 
-    window.location = HotelDemo.genUrl(url, `${page}.html`, params);
+    return HotelDemo.genUrl(url, `${page}.html`, params);
+  }
+
+  function redirect(page, params) {
+    window.location = HotelDemo.getPageUrl(page, params);
   };
 
   HotelDemo.redirectToResults = redirect.bind(null, 'results');

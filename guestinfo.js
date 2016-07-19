@@ -75,6 +75,10 @@
   app.guests = getGuestsData(criteria.rooms, showAllGuests);
 
   app.onContinue = function(ev) {
+    if (!validateInput()) {
+      return;
+    }
+
     HotelDemo.setItem('guestinfo', {
       guests: app.guests,
       phoneNumber: app.phoneNumber,

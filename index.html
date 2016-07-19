@@ -2,27 +2,36 @@
 <html lang="en">
 
 <head>
-  <meta charset="utf-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="initial-scale=1, maximum-scale=1">
+
   <title>Hotel Search Demo</title>
 
   <script src="bower_components/webcomponentsjs/webcomponents-lite.min.js"></script>
 
   <link rel="import" href="elements.html">
+  <link rel="stylesheet" href="main.css">
+  <style is="custom-style" include="custom-style"></style>
 </head>
 
 <body unresolved>
 
   <template is="dom-bind" id="app">
+    <!-- FIXME: I don't want the back button. How do I disable it?. -->
+    <t-header icon="" normal-heading label="Hotel Search" url=""></t-header>
 
-    <t-hotel-search id="searchComponent">
-      <t-hotel-search-provider id="searchProvider"
-        api-base-url="{{apiBaseUrl}}"
-        api-relative-url="{{apiSearchUrl}}"
-        auth-token="{{authToken}}">
-      </t-hotel-search-provider>
-    </t-hotel-search>
+    <t-hotel-search id="searchComponent"></t-hotel-search>
+    <t-hotel-search-provider id="searchProvider"
+      api-base-url="{{apiBaseUrl}}"
+      api-relative-url="{{apiSearchUrl}}"
+      auth-token="{{authToken}}">
+    </t-hotel-search-provider>
 
-    <t-mystique-auth name="mystiquedemo" cid="20043"
+    <t-mystique-auth id="mysAuth"
+      name="mystiquedemo"
+      cid="20043"
       token-response="{{tokenResponse}}"
       url="[[authApiEndpoint]]">
     </t-mystique-auth>

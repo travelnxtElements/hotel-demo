@@ -2,12 +2,18 @@
 <html lang="en">
 
 <head>
-  <meta charset="utf-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="initial-scale=1, maximum-scale=1">
+
   <title>Hotel Search Demo</title>
 
   <script src="bower_components/webcomponentsjs/webcomponents-lite.min.js"></script>
 
   <link rel="import" href="elements.html">
+  <style is="custom-style" include="custom-style"></style>
+  <link rel="stylesheet" href="main.css">
 
   <style>
     body {
@@ -17,14 +23,29 @@
     t-hotel-itinerary-item {
       cursor: pointer;
     }
+
+    iron-icon[icon="star"] {
+      color: gold !important;
+    }
   </style>
 </head>
 
 <body unresolved>
 
   <template is="dom-bind" id="app">
+    <t-header icon="icons:arrow-back" url="">
+      <t-hotel-search-recap
+        location="{{criteria.location}}"
+        check-in="{{criteria.checkIn}}"
+        check-out="{{criteria.checkOut}}"
+        adult-count="{{criteria.adultCount}}"
+        child-count="{{criteria.childCount}}"
+        search-page-url="">
+      </t-hotel-search-recap>
+    </t-header>
 
-    <t-list search-icon="icons:search"
+    <t-list id="results"
+      search-icon="icons:search"
       filter-icon="icons:filter-list"
       token-param="inventories"
       currency="USD"
@@ -50,6 +71,10 @@
     </iron-ajax>
 
     <template is="dom-if" if="[[loading]]">
+      <!--
+        FIXME: the `t-hotel-itinerary-item` component should gray out when
+        user clicks on it
+      -->
       <t-fullpage-loader active>
         <div>Please do not refresh the page, we are fetching details of the hotel...</div>
       </t-fullpage-loader>

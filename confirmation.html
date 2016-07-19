@@ -2,12 +2,19 @@
 <html lang="en">
 
 <head>
-  <meta charset="utf-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="initial-scale=1, maximum-scale=1">
+
   <title>Hotel Search Demo</title>
 
   <script src="bower_components/webcomponentsjs/webcomponents-lite.min.js"></script>
 
   <link rel="import" href="elements.html">
+  <style is="custom-style" include="custom-style"></style>
+  <link rel="stylesheet" href="main.css">
+
   <style is="custom-style" include="travel-element-styles"></style>
 
   <style>
@@ -16,8 +23,6 @@
     }
 
     .icon-star {
-      width: 15px;
-      height: 15px;
       color: gold;
     }
   </style>
@@ -30,8 +35,7 @@
 
     <!-- FIXME: there should be a trip summary element -->
     <t-section-header label="Trip summary" style="margin:0"></t-section-header>
-
-    <div  class="section font-12 primary-text border-bottom">
+    <div class="section font-12 primary-text border-bottom">
       <div class="layout horizontal justified">
         <div class="font-16 primary-text">{{cartItem.inventory.name}}</div>
         <div class="layout horizontal">
@@ -55,6 +59,17 @@
       </div>
       <div id="more" class="link-style" on-click="toggle">more</div>
     </div>
+    <div class="section-small font-12 layout horizontal justified">
+      <span>Hotel confirmation number :</span>
+      <span>{{hCnum}}</span>
+    </div>
+
+    <t-section-header label="Guest Info" style="margin:0"></t-section-header>
+    <div class="section-small font-12">
+      <template is="dom-repeat" items="{{guests}}" as="guest">
+        {{guest.title}} {{guest.firstName}} {{guest.middleName}} {{guest.lastName}} {{guest.suffix}}
+      </template>
+    </div>
 
     <t-overlay id="overlay" header="Policies">
       <t-hotel-room-policy-list policies="{{displayPolicies}}">
@@ -65,6 +80,7 @@
     <t-faredetails
       is-collapsible
       data="{{fareComponents}}"
+      label="Payment Details"
       base-fare-label="[[baseFareLabel]]"
       itinerary-fare-label="[[itineraryFareLabel]]">
     </t-faredetails>

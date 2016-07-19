@@ -20,6 +20,7 @@
     "t-mystique-auth": "travelnxtElements/t-mystique-auth#^1.0.0",
     "t-hotel-search": "travelnxtElements/t-hotel-search#^1.0.0",
     "t-list": "atomelements/t-list#^1.1.11",
+    "t-header": "travelnxtElements/t-header#^1.0.0",
     "t-hotel-itinerary-item": "travelnxtelements/t-hotel-result-item#^1.0.3",
     "t-carousel": "atomelements/t-carousel#^1.0.0",
     "t-section-header": "atomelements/t-section-header#^1.0.0",

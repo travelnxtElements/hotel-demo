@@ -7,11 +7,12 @@
   let genUrl = HotelDemo.genUrl.bind(null, baseApiEndpoint);
 
   app.loading = false;
+  app.criteria = HotelDemo.getItem('criteria');
 
   app.addEventListener('dom-change', function() {
     let token = HotelDemo.getItem('token');
     let sid = HotelDemo.getItem('sid');
-    let results = document.querySelector('t-list');
+    let results = app.$.results;
     let selections = [
       'Name', 'Rating', 'Address', 'HeroImageUrl', 'StayDuration', 
       'IsPostPaid', 'Source', 'Id', 'Deal', 'Fare'
@@ -47,12 +48,11 @@
     // FIXME: you shouldn't have to run `generateFilter` this way
     // you should be able to pass and configure your own set of filters
     results.addEventListener('list-population', function(ev) {
-      let filter = Polymer.dom(document.querySelector('t-list').root);
+      let filter = Polymer.dom(results.root);
       filter.querySelector('t-filter').generateFilter();
     });
 
-    let toast = document.querySelector('#toast');
-    let singleItineraryCall = document.querySelector('#singleItineraryCall');
+    let singleItineraryCall = app.$.singleItineraryCall;
 
     results.addEventListener('item-selected', function(ev) {
       app.loading = true;
@@ -67,7 +67,7 @@
   });
 
   app.singleItinerarySuccess = function(ev) {
-    let toast = document.querySelector('#toast');
+    let toast = app.$.toast;
 
     try {
       HotelDemo.setItem('itinerary', event.detail.response.inventories[0]);

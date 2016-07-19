@@ -8,10 +8,10 @@
   app.authApiEndpoint = `${baseApiEndpoint}api/Authentication/Authenticate/context`;
 
   app.addEventListener('dom-change', function() {
-    let mysAuth = document.querySelector('t-mystique-auth');
-    let search = document.querySelector('t-hotel-search');
-    let provider = Polymer.dom(search).querySelector('#searchProvider');
-    let toast = document.getElementById('toast');
+    let mysAuth = app.$.mysAuth;
+    let search = app.$.searchComponent;
+    let provider = app.$.searchProvider;
+    let toast = app.$.toast;
 
     app.apiBaseUrl = baseApiEndpoint;
     app.apiSearchUrl = 'api/hotel/search';
@@ -43,7 +43,7 @@
 
       // FIXME: why was this removed from code in `t-hotel-search`
       // look at the commit `52ee94d1`
-      search.$.search.label = 'Searching Hotels...';
+      search.$.search.label = 'SEARCHING HOTELS...';
       search.$.search.disabled = true;
     });
 
@@ -68,7 +68,7 @@
     };
 
     provider._errorHandler = function(ev) {
-      search.$.search.label = 'Search Hotels';
+      search.$.search.label = 'SEARCH HOTELS';
       search.$.search.disabled = false;
 
       HotelDemo.errorHandler.call(app, ev);

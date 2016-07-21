@@ -29,7 +29,7 @@ then
     [[ -d "_publish" ]] && rm -rf "_publish"
 
     printf "%-20s: Clone the demos repository and checkout gh-pages\n" "Clone"
-    remote="git@github.com:travelnxtelements/demos.git"
+    remote="$(git remote show origin | sed -rn 's/^\s*Fetch URL: (.*)$/\1/p')"
     git clone --branch=gh-pages --depth=1 "$remote" _publish && cd _publish
 
     printf "%-20s: Copy the build artifacts from _site dir\n" "Copy"

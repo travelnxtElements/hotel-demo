@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="initial-scale=1, maximum-scale=1">
+
+  <title>Hotel Search Demo</title>
+
+  <script src="bower_components/webcomponentsjs/webcomponents-lite.min.js"></script>
+
+  <link rel="import" href="elements.html">
+  <link rel="stylesheet" href="main.css">
+  <style is="custom-style" include="custom-style"></style>
+</head>
+
+<body unresolved>
+
+  <template is="dom-bind" id="app">
+    <!-- FIXME: I don't want the back button. How do I disable it?. -->
+    <t-header icon="" url="">
+      <img alt="Travlnxt" class="style-scope t-app-footer" src="https://s3.amazonaws.com/tavisca.samplebucket/124850/Images/c9154425-43be-4a7a-9d44-463c97a58040">
+    </t-header>
+
+    <t-hotel-search id="searchComponent"></t-hotel-search>
+    <t-hotel-search-provider id="searchProvider"
+      api-base-url="{{apiBaseUrl}}"
+      api-relative-url="{{apiSearchUrl}}"
+      auth-token="{{authToken}}">
+    </t-hotel-search-provider>
+
+    <t-mystique-auth id="mysAuth"
+      name="mystiquedemo"
+      cid="20043"
+      token-response="{{tokenResponse}}"
+      url="[[authApiEndpoint]]">
+    </t-mystique-auth>
+
+    <paper-toast id="toast"></paper-toast>
+
+    <t-app-footer email="swat@tavisca.com" phone="800-459-1597"></t-app-footer>
+
+  </template>
+
+  <script src="base.js"></script>
+  <script src="search.js"></script>
+
+</body>
+
+</html>

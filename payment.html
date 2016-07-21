@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="initial-scale=1, maximum-scale=1">
+
+  <title>Hotel Search Demo</title>
+
+  <script src="bower_components/webcomponentsjs/webcomponents-lite.min.js"></script>
+
+  <link rel="import" href="elements.html">
+  <style is="custom-style" include="custom-style"></style>
+  <link rel="stylesheet" href="main.css">
+
+  <style is="custom-style" include="travel-element-styles"></style>
+
+  <style>
+    body {
+      font-family: 'Open Sans'
+    }
+
+    .icon-star {
+      width: 15px;
+      height: 15px;
+      color: gold;
+    }
+
+    #terms {
+      margin-right: 10px;
+    }
+  </style>
+</head>
+
+<body unresolved>
+
+  <template is="dom-bind" id="app">
+    <t-header icon="icons:arrow-back"
+      normal-heading
+      label="Payment"
+      url="{{guestinfoPageUrl}}">
+    </t-header>
+
+    <!-- FIXME: there should be a trip summary element -->
+    <t-section-header label="Trip summary" style="margin:0"></t-section-header>
+
+    <div  class="section-small font-12 secondary-text">
+      <div class="font-16 font-semi margin-bottom primary-text">
+        {{cartItem.inventory.name}}
+      </div>
+      <div class="margin-bottom">
+        {{stayStartDate}} - {{stayEndDate}}
+      </div>
+      <div class="layout horizontal margin-bottom">
+        <template is="dom-repeat" items="{{starRating}}">
+          <iron-icon class="icon-star" icon="icons:star"></iron-icon>
+        </template>
+      </div>
+      <div id="toggle" hidden>
+        <div class="margin-bottom">
+          {{adultCountText}}
+          <template is="dom-if" if="{{searchCriteria.rooms.0.children.quantity}}">
+            , {{childrenCountText}}
+          </template>
+        </div>
+        <div class="margin-bottom">{{cartItem.inventory.rooms.0.name}}</div>
+
+        <div  class="margin-bottom link-style" on-click="showPolicies">policy</div>
+        <div class="margin-bottom">{{cartItem.inventory.address}}</div>
+      </div>
+      <div id="more" class="link-style" on-click="toggle">more</div>
+    </div>
+
+    <t-overlay id="overlay" header="Policies">
+      <t-hotel-room-policy-list policies="{{displayPolicies}}">
+        <t-hotel-room-policy-provider id="policyProvider"></t-hotel-room-policy-provider>
+      </t-hotel-room-policy-list>
+    </t-overlay>
+
+    <t-faredetails
+      is-collapsible
+      data="{{fareComponents}}"
+      passenger-details="[[passengerDetails]]"
+      base-fare-label="[[baseFareLabel]]"
+      itinerary-fare-label="[[itineraryFareLabel]]">
+    </t-faredetails>
+
+    <t-section-header id="paymentHeader" label="Payment Information"></t-section-header>
+    <t-creditcard id="creditCard"></t-creditcard>
+    <t-address id="address"
+      country-api="{{apiCountryUrl}}"
+      base-geo-api="{{apiBaseGeoUrl}}"
+      query-params="{{queryParamsString}}">
+    </t-address>
+    <div class="layout horizontal start section-small">
+      <t-checkbox id="terms" checked="{{checked}}"></t-checkbox>
+
+      <div class="flex font-12 secondary-text">
+        I have read and accept the
+        <a class="link-style" on-click="showPolicies">Booking Policies</a>,
+        <a href="http://www.bluegreenvacations.com/terms-of-use"
+          class="link-style" target="_blank">Terms & Conditions</a>
+        and
+        <a href="http://www.bluegreenvacations.com/privacy-policy"
+          class="link-style" target="_blank">Privacy Policy</a>.
+      </div>
+    </div>
+
+    <div class="layout horizontal section-small">
+      <t-button id="submit" class="primary flex"
+        label="Pay now"
+        disabled="{{!checked}}"
+        on-click="book">
+      </t-button>
+    </div>
+
+    <iron-ajax id="apiBooking"
+      url="{{apiBookingUrl}}"
+      body="{{bookingRequest}}"
+      method="POST"
+      content-type="application/json"
+      on-response="bookingComplete"
+      on-error="bookingFailed">
+    </iron-ajax>
+
+    <template is="dom-if" if="[[loading]]">
+      <t-fullpage-loader active>
+        <div>Please do not refresh the page, we are confirming your booking...</div>
+      </t-fullpage-loader>
+    </template>
+
+    <paper-toast id="toast"></paper-toast>
+
+    <t-app-footer email="swat@tavisca.com" phone="800-459-1597"></t-app-footer>
+
+  </template>
+
+  <script src="base.js"></script>
+  <script src="mixin-trip-summary.js"></script>
+  <script src="payment.js"></script>
+
+</body>
+
+</html>

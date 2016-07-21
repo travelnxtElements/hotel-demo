@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="initial-scale=1, maximum-scale=1">
+
+  <title>Hotel Search Demo</title>
+
+  <script src="bower_components/webcomponentsjs/webcomponents-lite.min.js"></script>
+
+  <link rel="import" href="elements.html">
+  <style is="custom-style" include="custom-style"></style>
+  <link rel="stylesheet" href="main.css">
+</head>
+
+<body unresolved>
+
+  <template is="dom-bind" id="app">
+
+    <t-header icon="icons:arrow-back"
+      normal-heading
+      label="Guest Info"
+      url="{{detailsPageUrl}}">
+    </t-header>
+
+    <template is="dom-repeat" items="{{guests}}" as="guest">
+      <t-section-header label="{{guest.header}}"></t-section-header>
+      <t-passenger-segment
+        first-name="{{guest.firstName}}"
+        last-name="{{guest.lastName}}"
+        gender="{{guest.gender}}"
+        title="{{guest.title}}"
+        type="{{guest.type}}"
+        hide-middle-name="true"
+        hide-suffix="true"
+        hide-date-of-birth="true"
+        hide-gender="true">
+      </t-passenger-segment>
+    </template>
+
+    <t-communication phone="{{phoneNumber}}" email="{{email}}"></t-communication>
+
+    <div class="horizontal layout" style="padding:10px;">
+      <t-button class="primary flex"
+        noink
+        label="Continue"
+        on-click="onContinue">
+      </t-button>
+    </div>
+
+    <t-app-footer email="swat@tavisca.com" phone="800-459-1597"></t-app-footer>
+
+  </template>
+
+  <script src="base.js"></script>
+  <script src="guestinfo.js"></script>
+
+</body>
+
+</html>

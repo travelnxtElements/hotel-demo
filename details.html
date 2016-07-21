@@ -76,6 +76,7 @@
           </t-hotel-room-policy-provider>
         </t-hotel-room-list>
       </div>
+      <!-- FIXME: the details should also be in it's own component -->
       <div class="details-tab">
         <div class="section-small font-12 secondary-text">
           <template is="dom-repeat" items="{{itinerary.descriptions}}">
@@ -154,8 +155,7 @@
 
     <paper-toast id="toast"></paper-toast>
 
-    <t-app-footer email="swat@tavisca.com"
-      phone="800-459-1597"></t-app-footer>
+    <t-app-footer email="swat@tavisca.com" phone="800-459-1597"></t-app-footer>
 
   </template>
 

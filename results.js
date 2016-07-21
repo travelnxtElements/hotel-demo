@@ -19,6 +19,11 @@
       'IsPostPaid', 'Source', 'Id', 'Deal', 'Fare'
     ];
 
+    // FIXME: there should be a component that takes base endpoint,
+    // api endpoint and query params object to generate a complete url
+    // or there should be a mystique specific url generator that takes
+    // product name and end point type to generate the url. This fix
+    // might apply at all the places where `genUrl` is used.
     let apiEndpoint = `api/hotel/results/${sid}/rates`;
     results.dataApi = genUrl(apiEndpoint, {
       top: 20, token: token, "$select": selections.join(',')

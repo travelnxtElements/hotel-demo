@@ -5,6 +5,7 @@
   HotelDemo.mixinSearchRecap = function(app) {
     let criteria = HotelDemo.getItem('criteria');
 
+    // FIXME: this has to be in some translator component
     app.location = criteria.destination.name;
     app.checkInDate = new Date(criteria.checkInDate.date);
     app.checkOutDate = new Date(criteria.checkOutDate.date);

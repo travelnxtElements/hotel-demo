@@ -1,3 +1,8 @@
+body {
+  margin: 0;
+}
+
+/* mobile is the default mode, extra handling needed for desktop */
 @media screen and (min-device-width: 500px) {
   html {
     background-color: #EEE;

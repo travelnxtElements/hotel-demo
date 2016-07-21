@@ -5,16 +5,17 @@
   let app = document.getElementById('app');
   let baseApiEndpoint = HotelDemo.baseApiEndpoint;
   let genUrl = HotelDemo.genUrl.bind(null, baseApiEndpoint);
+  let criteria = HotelDemo.getItem('criteria');
 
   app.loading = false;
-  app.criteria = HotelDemo.getItem('criteria');
+  HotelDemo.mixinSearchRecap(app);
 
   app.addEventListener('dom-change', function() {
     let token = HotelDemo.getItem('token');
     let sid = HotelDemo.getItem('sid');
     let results = app.$.results;
     let selections = [
-      'Name', 'Rating', 'Address', 'HeroImageUrl', 'StayDuration', 
+      'Name', 'Rating', 'Address', 'HeroImageUrl', 'StayDuration',
       'IsPostPaid', 'Source', 'Id', 'Deal', 'Fare'
     ];
 

@@ -20,6 +20,12 @@
 
   <template is="dom-bind" id="app">
 
+    <t-header icon="icons:arrow-back"
+      normal-heading
+      label="Guest Info"
+      url="{{detailsPageUrl}}">
+    </t-header>
+
     <template is="dom-repeat" items="{{guests}}" as="guest">
       <t-section-header label="{{guest.header}}"></t-section-header>
       <t-passenger-segment
@@ -44,6 +50,9 @@
         on-click="onContinue">
       </t-button>
     </div>
+
+    <t-app-footer email="swat@tavisca.com"
+      phone="800-459-1597"></t-app-footer>
 
   </template>
 

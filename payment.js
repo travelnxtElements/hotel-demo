@@ -74,6 +74,7 @@
   HotelDemo.mixinTripSummary(app);
 
   app.loading = false;
+  app.guestinfoPageUrl = HotelDemo.getPageUrl('guestinfo');
   app.apiBookingUrl = genUrl('api/ShoppingCart/book', { token: token });
   app.apiCountryUrl = genUrl('api/content/countries');
   app.apiBaseGeoUrl = genUrl('api/content');

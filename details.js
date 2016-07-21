@@ -10,6 +10,9 @@
   let itinerary = HotelDemo.getItem('itinerary');
   let token = HotelDemo.getItem('token');
 
+  HotelDemo.mixinSearchRecap(app);
+  app.resultsPageUrl = HotelDemo.getPageUrl('results');
+
   app.addEventListener('dom-change', function() {
     let toast = document.querySelector('#toast');
 

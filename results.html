@@ -33,14 +33,14 @@
 <body unresolved>
 
   <template is="dom-bind" id="app">
-    <t-header icon="icons:arrow-back" url="">
+    <t-header icon="icons:arrow-back" url="{{searchPageUrl}}">
       <t-hotel-search-recap
-        location="{{criteria.location}}"
-        check-in="{{criteria.checkIn}}"
-        check-out="{{criteria.checkOut}}"
-        adult-count="{{criteria.adultCount}}"
-        child-count="{{criteria.childCount}}"
-        search-page-url="">
+        location="{{location}}"
+        check-in="{{checkInDate}}"
+        check-out="{{checkOutDate}}"
+        adult-count="{{adultCount}}"
+        child-count="{{childCount}}"
+        search-page-url="{{searchPageUrl}}">
       </t-hotel-search-recap>
     </t-header>
 
@@ -82,9 +82,13 @@
 
     <paper-toast id="toast"></paper-toast>
 
+    <t-app-footer email="swat@tavisca.com"
+      phone="800-459-1597"></t-app-footer>
+
   </template>
 
   <script src="base.js"></script>
+  <script src="mixin-search-recap.js"></script>
   <script src="results.js"></script>
 
 </body>

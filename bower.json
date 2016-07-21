@@ -32,6 +32,7 @@
     "t-creditcard": "travelnxtElements/t-creditcard#^1.0.0",
     "t-loader": "atomelements/t-loader#^1.0.0",
     "t-address": "travelnxtElements/t-address#^1.0.0",
+    "t-app-footer": "travelnxtElements/t-app-footer#^1.0.0",
     "t-checkbox": "atomelements/t-checkbox#^1.0.0",
     "iron-pages": "PolymerElements/iron-pages#^1.0.4",
     "iron-icons": "PolymerElements/iron-icons#^1.1.3"

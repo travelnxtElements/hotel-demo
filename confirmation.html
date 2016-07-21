@@ -31,6 +31,13 @@
 <body unresolved>
 
   <template is="dom-bind" id="app">
+
+    <t-header icon="icons:home"
+      normal-heading
+      label="Confirmation"
+      url="{{searchPageUrl}}">
+    </t-header>
+
     <t-notify active message="{{successMessage}}" success-icon="icons:check-circle" type="success"></t-notify>
 
     <!-- FIXME: there should be a trip summary element -->
@@ -84,6 +91,9 @@
       base-fare-label="[[baseFareLabel]]"
       itinerary-fare-label="[[itineraryFareLabel]]">
     </t-faredetails>
+
+    <t-app-footer email="swat@tavisca.com"
+      phone="800-459-1597"></t-app-footer>
 
   </template>
 

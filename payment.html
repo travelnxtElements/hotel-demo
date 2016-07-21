@@ -37,6 +37,12 @@
 <body unresolved>
 
   <template is="dom-bind" id="app">
+    <t-header icon="icons:arrow-back"
+      normal-heading
+      label="Payment"
+      url="{{guestinfoPageUrl}}">
+    </t-header>
+
     <!-- FIXME: there should be a trip summary element -->
     <t-section-header label="Trip summary" style="margin:0"></t-section-header>
 
@@ -126,6 +132,10 @@
     </template>
 
     <paper-toast id="toast"></paper-toast>
+
+    <t-app-footer email="swat@tavisca.com"
+      phone="800-459-1597"></t-app-footer>
+
   </template>
 
   <script src="base.js"></script>

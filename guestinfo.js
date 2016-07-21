@@ -70,6 +70,7 @@
 
   app.phoneNumber = '';
   app.email = '';
+  app.detailsPageUrl = HotelDemo.getPageUrl('details');
 
   let showAllGuests = cartItem.inventory.allPassengersInfoRequired;
   app.guests = getGuestsData(criteria.rooms, showAllGuests);

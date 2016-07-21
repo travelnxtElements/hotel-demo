@@ -39,8 +39,9 @@
 
   HotelDemo.getPageUrl = function(page, params) {
     let url = window.location.href.replace(/\/\w+\.html.*/, `/`);
+    page = page === '/' ? '' : `${page}.html`;
 
-    return HotelDemo.genUrl(url, `${page}.html`, params);
+    return HotelDemo.genUrl(url, page, params);
   }
 
   function redirect(page, params) {

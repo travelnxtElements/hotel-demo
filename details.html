@@ -28,6 +28,17 @@
 
   <template is="dom-bind" id="app">
 
+    <t-header icon="icons:arrow-back" url="{{resultsPageUrl}}">
+      <t-hotel-search-recap
+        location="{{location}}"
+        check-in="{{checkInDate}}"
+        check-out="{{checkOutDate}}"
+        adult-count="{{adultCount}}"
+        child-count="{{childCount}}"
+        search-page-url="{{searchPageUrl}}">
+      </t-hotel-search-recap>
+    </t-header>
+
     <template is="dom-if" if="[[imgzoomed]]">
       <div style="height:400px;"></div>
     </template>
@@ -143,9 +154,13 @@
 
     <paper-toast id="toast"></paper-toast>
 
+    <t-app-footer email="swat@tavisca.com"
+      phone="800-459-1597"></t-app-footer>
+
   </template>
 
   <script src="base.js"></script>
+  <script src="mixin-search-recap.js"></script>
   <script src="details.js"></script>
 
 </body>

@@ -2,6 +2,10 @@ body {
   margin: 0;
 }
 
+paper-item {
+  cursor: pointer;
+}
+
 /* mobile is the default mode, extra handling needed for desktop */
 @media screen and (min-device-width: 500px) {
   html {
@@ -18,13 +22,12 @@ body {
     min-height: 200px;
   }
 
-  /* FIXME: the overlay should adjust according to the parent */
+  /* FIXME: this div should be inside t-list */
   .absolute {
     left: 0;
     right: 0;
   }
 
-  /* FIXME: fullpage loader should have position as absolute */
   .modal.t-fullpage-loader {
     position: absolute !important;
   }

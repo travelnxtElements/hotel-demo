@@ -33,7 +33,7 @@ then
     git clone --branch=gh-pages --depth=1 "$remote" _publish && cd _publish
 
     printf "%-20s: Copy the build artifacts from _site dir\n" "Copy"
-    cp ../_site/*.{js,css,html} ./
+    cp -r ../_site/* ./
 
     printf "%-20s: Add files, commit and push\n" "Push"
     git add .

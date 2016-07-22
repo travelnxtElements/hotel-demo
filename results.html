@@ -58,6 +58,10 @@
       no-results-filtered-for-search-term-message="Couldn't find any hotel names containing 'SEARCHTERM’.">
 
       <template>
+        <!--
+          FIXME: the `t-hotel-itinerary-item` component should gray out when
+          user clicks on it
+        -->
         <t-hotel-itinerary-item itinerary="{{item}}"></t-hotel-itinerary-item>
       </template>
     </t-list>
@@ -71,10 +75,6 @@
     </iron-ajax>
 
     <template is="dom-if" if="[[loading]]">
-      <!--
-        FIXME: the `t-hotel-itinerary-item` component should gray out when
-        user clicks on it
-      -->
       <t-fullpage-loader active>
         <div>Please do not refresh the page, we are fetching details of the hotel...</div>
       </t-fullpage-loader>

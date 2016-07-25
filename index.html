@@ -41,19 +41,8 @@
     <paper-toast id="toast"></paper-toast>
 
     <t-app-footer email="swat@tavisca.com" phone="800-459-1597"></t-app-footer>
+    <theme-switcher></theme-switcher>
 
-    <paper-fab mini icon="image:color-lens" title="change theme" active="{{fabActive}}" toggles></paper-fab>
-    <paper-dialog id="dropdownDialog" opened="{{fabActive}}" vertical-align="top" modal>
-      <h2>Choose Theme</h2>
-      <paper-listbox selected="0">
-        <paper-item>Red</paper-item>
-        <paper-item>Blue</paper-item>
-      </paper-listbox>
-      <div class="buttons">
-        <paper-button dialog-confirm>Save</paper-button>
-        <paper-button dialog-dismiss>Cancel</paper-button>
-      </div>
-    </paper-dialog>
   </template>
 
   <script src="base.js"></script>

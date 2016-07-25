@@ -14,8 +14,8 @@ paper-item {
 
 #themeFab {
   position: absolute;
-  left: 10px;
-  bottom: 25px;
+  top: 60px;
+  right: 5px;
   color: #FFF;
 }
 
@@ -38,10 +38,6 @@ paper-item {
   .absolute {
     left: 0;
     right: 0;
-  }
-
-  .modal.t-fullpage-loader {
-    position: absolute !important;
   }
 
   #themeDialog {

@@ -58,6 +58,7 @@
     "t-shared-components": "^1.0.0",
     "iron-icon": "^1.0.7",
     "iron-a11y-keys-behavior": "^1.1.5",
-    "iron-flex-layout": "^1.2.1"
+    "iron-flex-layout": "^1.2.1",
+    "paper-material": "^1.0.5"
   }
 }

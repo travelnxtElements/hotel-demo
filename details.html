@@ -156,9 +156,11 @@
     <paper-toast id="toast"></paper-toast>
 
     <t-app-footer email="swat@tavisca.com" phone="800-459-1597"></t-app-footer>
-    <theme-switcher></theme-switcher>
 
   </template>
+
+  <!-- TODO: somehow placing this below the app-footer causes image carousel to break -->
+  <theme-switcher></theme-switcher>
 
   <script src="scripts/base.js"></script>
   <script src="scripts/mixin-search-recap.js"></script>

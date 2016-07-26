@@ -26,7 +26,7 @@
     // might apply at all the places where `genUrl` is used.
     let apiEndpoint = `api/hotel/results/${sid}/rates`;
     results.dataApi = genUrl(apiEndpoint, {
-      top: 20, token: token, "$select": selections.join(',')
+      "$top": 20, token: token, "$select": selections.join(',')
     });
 
     apiEndpoint = `api/hotel/filter/${sid}/rates`;
@@ -36,7 +36,7 @@
 
     apiEndpoint = `api/hotel/results/filter/${sid}/rates`;
     results.filterResultsApi = genUrl(apiEndpoint, {
-      top: 20, token: token, "$select": selections.join(',')
+      "$top": 20, token: token, "$select": selections.join(',')
     });
 
     // TODO: are this parameters common to any hotel results call (mystique)

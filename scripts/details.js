@@ -77,11 +77,12 @@
       let cartItem = event.detail.response.addToCartItemResult[0];
       HotelDemo.setItem('cart-item', cartItem);
 
-      app.loading = false;
       HotelDemo.redirectToGuestInfo();
     } catch (e) {
       toast.text = 'Bad response from pricing api';
       toast.open();
+    } finally {
+      app.loading = false;
     }
   };
 

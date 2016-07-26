@@ -2,7 +2,7 @@
   window.HotelDemo = window.HotelDemo || {};
   let HotelDemo = window.HotelDemo;
 
-  HotelDemo.baseApiEndpoint = 'http://demo.travelnxt.com/';
+  HotelDemo.baseApiEndpoint = 'https://demo.travelnxt.com/';
 
   HotelDemo.getItem = function(key) {
     let search = window.location.search;

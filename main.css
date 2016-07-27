@@ -19,6 +19,10 @@ paper-item {
   color: #FFF;
 }
 
+t-app-footer img {
+  display: none !important;
+}
+
 /* mobile is the default mode, extra handling needed for desktop */
 @media screen and (min-device-width: 500px) {
   html {

@@ -21,7 +21,7 @@
   <template is="dom-bind" id="app">
     <!-- FIXME: I don't want the back button. How do I disable it?. -->
     <t-header icon="" url="">
-      <img alt="Travlnxt" class="style-scope t-app-footer" src="https://s3.amazonaws.com/tavisca.samplebucket/124850/Images/c9154425-43be-4a7a-9d44-463c97a58040">
+      <img alt="Travlnxt" src="https://s3.amazonaws.com/tavisca.samplebucket/124850/Images/c9154425-43be-4a7a-9d44-463c97a58040">
     </t-header>
 
     <t-hotel-search id="searchComponent"></t-hotel-search>
@@ -41,6 +41,7 @@
     <paper-toast id="toast"></paper-toast>
 
     <t-app-footer email="swat@tavisca.com" phone="800-459-1597"></t-app-footer>
+    <theme-switcher></theme-switcher>
 
     <paper-fab mini icon="image:color-lens" title="change theme" active="{{fabActive}}" toggles></paper-fab>
     <paper-dialog id="dropdownDialog" opened="{{fabActive}}" vertical-align="top" modal>
@@ -56,8 +57,8 @@
     </paper-dialog>
   </template>
 
-  <script src="base.js"></script>
-  <script src="search.js"></script>
+  <script src="scripts/base.js"></script>
+  <script src="scripts/search.js"></script>
 
 </body>
 

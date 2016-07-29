@@ -1,0 +1,164 @@
+<link rel="import" href="../bower_components/polymer/polymer.html">
+<link rel="import" href="../bower_components/iron-flex-layout/iron-flex-layout-classes.html">
+
+<dom-module id="hotel-itinerary">
+  <template strip-whitespace>
+    <style is="custom-style" include="iron-flex iron-flex-alignment"></style>
+
+    <style>
+      :host {
+        display: block;
+      }
+
+      .info,
+      .heroImage,
+      .seperator {
+        margin: 0 10px;
+      }
+
+      .address,
+      .currency,
+      .discount,
+      .type {
+        font-size: 12px;
+        color: var(--light-primary-color, #BBB);
+      }
+
+      .heroImage {
+        margin: 10px;
+        display: block;
+      }
+
+      .info {
+        margin-bottom: 10px;
+      }
+
+      .seperator {
+        height: 1px;
+        border-bottom: 1px solid var(--grey-two, #EEE);
+      }
+
+      .price {
+        width: 100px;
+      }
+
+      .discount {
+        text-decoration: line-through;
+      }
+
+      iron-icon[icon="star"] {
+        height: 15px;
+        width: 15px;
+      }
+
+      .amount {
+        font-weight: bold;
+        color: #555;
+      }
+
+      .name {
+        color: #555;
+      }
+
+      .type {
+        text-align: right;
+      }
+
+      .currency {
+        margin-right: 5px;
+      }
+    </style>
+
+    <div>
+      <t-image class="heroImage" sizing="contain" height="200" src="{{itinerary.heroImageUrl}}"></t-image>
+      <div class="layout horizontal info">
+        <div class="flex layout horizontal">
+          <div class="layout vertical flex">
+            <div class="name">{{itinerary.name}}</div>
+            <span class="address">[[itinerary.address]]</span>
+            <span class="flex"></span>
+            <div class="layout horizontal">
+              <template is="dom-repeat" items="{{_numberToArray(itinerary.rating)}}">
+                <iron-icon icon="star"></iron-icon>
+              </template>
+            </div>
+          </div>
+        </div>
+        <div class="layout vertical price">
+          <div class="layout horizontal end-justified baseline">
+            <span class="currency">{{_currency}}</span>
+            <template is="dom-if" if="[[_isDiscountApplicable(_strikeOffPrice, _displayPrice)]]">
+              <span class="discount">{{_getDisplayFare(_strikeOffPrice.money.amount, itinerary.stayDuration.start.date, itinerary.stayDuration.end.date)}}</span>
+            </template>
+            <div class="amount">{{_getDisplayFare(_displayPrice.money.amount, itinerary.stayDuration.start.date, itinerary.stayDuration.end.date)}}</div>
+          </div>
+          <div class="type">avg. nightly</div>
+        </div>
+      </div>
+      <div class="seperator"></div>
+    </div>
+  </template>
+
+  <script>
+    Polymer({
+      is: 'hotel-itinerary',
+
+      properties: {
+        itinerary: {
+          type: Object,
+          value: function() {
+            return {};
+          }
+        }
+      },
+
+      observers: ['_fareComponentsChanged(itinerary.fare.components)'],
+
+      behaviors: [TravelNxt.Behaviors.FareBehavior],
+
+      _fareComponentsChanged: function(components) {
+        this._components = components;
+        //this.notifyPath('_components', components);
+      },
+
+      _getLowerCase:function(text){
+        text = text || "";
+        return text.toLowerCase();
+      },
+
+      _numberToArray: function(number) {
+        var arr = [];
+        for (var i = 0; i < number; i++) {
+          arr.push(i);
+        };
+        return arr;
+      },
+
+      _getDisplayFare: function(amount, checkIn, checkOut) {
+        if (amount) {
+          return Math.ceil(amount / this._dateDiff(checkIn, checkOut));
+        }
+        return null;
+      },
+
+      _isDiscountApplicable: function (strikeOffPrice, displayPrice) {
+        return strikeOffPrice.money.amount > displayPrice.money.amount;
+      },
+
+      _dateDiff: function(fromDate, toDate) {
+        if (!fromDate || !toDate)
+          return 0;
+        if (typeof fromDate == 'string') {
+          fromDate = new Date(fromDate);
+        }
+        if (typeof toDate == 'string') {
+          toDate = new Date(toDate);
+        }
+        var diff = toDate - fromDate;
+        var divideBy = (24 * 60 * 60 * 1000);
+
+        return Math.floor(diff / divideBy);
+      }
+    });
+  </script>
+</dom-module>

@@ -34,6 +34,8 @@
         <paper-item>Red</paper-item>
         <paper-item>Purple</paper-item>
       </paper-listbox>
+      <a class="link" href="../create-theme.html">Create new theme</a>
+
       <div class="buttons">
         <paper-button dialog-confirm>Save</paper-button>
         <paper-button dialog-dismiss>Cancel</paper-button>
@@ -56,23 +58,29 @@
           type: Number,
           value: 0,
           observer: 'switchTheme'
+        },
+
+        themeUrl: {
+          type: String,
+          computed: 'getThemeUrl(themeIndex)',
+          notify: true
         }
       },
 
       _count: 0,
       _prevThemeIndex: null,
+      _themes: [
+        'components/theme-default.html',
+        'components/theme-red.html',
+        'components/theme-purple.html'
+      ],
 
       attached: function() {
         this.themeIndex = HotelDemo.getItem('theme') || 0;
       },
 
       switchTheme: function(idx) {
-        let themes = [
-          `components/theme-default.html?v=${this._count}`,
-          `components/theme-red.html?v=${this._count}`,
-          `components/theme-purple.html?v=${this._count}`
-        ];
-
+        let themes = this._themes.map(theme => `${theme}?v=${this._count}`);
         this._count++;
         Polymer.Base.importHref(themes[idx]);
       },
@@ -87,6 +95,10 @@
 
       dialogOpened: function(ev) {
         this._prevThemeIndex = this.themeIndex;
+      },
+
+      getThemeUrl: function(themeIndex) {
+        return this._themes[themeIndex];
       }
     });
   </script>

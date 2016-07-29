@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="initial-scale=1, maximum-scale=1">
+
+  <title>Hotel Search Demo | Create Theme</title>
+
+  <script src="bower_components/webcomponentsjs/webcomponents-lite.min.js"></script>
+
+  <link rel="import" href="elements.html">
+  <link rel="stylesheet" href="main.css">
+  <style is="custom-style" include="custom-style"></style>
+
+  <style>
+    body {
+      font-family: 'Open Sans';
+    }
+
+    header,
+    #themeOptions,
+    #submit {
+      padding: 10px;
+    }
+    
+    #themeOptions t-colorpicker,
+    #themeOptions t-input {
+      margin: 10px 0;
+    }
+
+    header {
+      font-size: 18px;
+      text-align: center;
+      border-bottom: 1px solid #EEE;
+    }
+
+    #submit {
+      display: flex;
+      justify-content: center;
+    }
+
+    .number {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .number > t-input {
+      flex: 1 1 auto;
+    }
+
+    .number > span {
+      width: 24px;
+      color: #BBBBBB;
+    }
+  </style>
+</head>
+
+<body unresolved>
+
+  <template is="dom-bind" id="app">
+
+    <t-header icon="icons:home"
+      normal-heading
+      label="Create Theme"
+      url="{{searchPageUrl}}">
+    </t-header>
+
+    <div id="themeOptions">
+      <template is="dom-repeat" items="{{themeOptions}}" as="option">
+        <template is="dom-if" if="{{option.isColor}}">
+          <t-colorpicker
+            data-name$="{{option.name}}"
+            label="{{option.label}}"
+            color="{{option.value}}">
+          </t-colorpicker>
+        </template>
+        <template is="dom-if" if="{{option.isNumber}}">
+          <div class="number">
+            <t-input
+              data-name$="{{option.name}}"
+              auto-validate
+              pattern="[0-9]+"
+              error-message="Has to be a number"
+              label="{{option.label}}"
+              value="{{option.value}}">
+            </t-input>
+            <span>px</span>
+          </div>
+        </template>
+        <template is="dom-if" if="{{option.isString}}">
+          <t-input
+            data-name$="{{option.name}}"
+            label="{{option.label}}"
+            value="{{option.value}}">
+          </t-input>
+        </template>
+      </template>
+    </div>
+
+    <div id="submit">
+      <t-button class="primary" on-tap="downloadTheme" label="Download"></t-button>
+    </div>
+
+    <t-app-footer email="swat@tavisca.com" phone="800-459-1597"></t-app-footer>
+    <settings-dialog theme-url="{{themeUrl}}"></settings-dialog>
+    <iron-ajax auto handle-as="text" url="{{themeUrl}}" on-response="parseTheme"></iron-ajax>
+  </template>
+
+  <script src="scripts/base.js"></script>
+  <script src="scripts/blob.js"></script>
+  <script src="scripts/file-saver.js"></script>
+  <script src="scripts/create-theme.js"></script>
+</body>
+
+</html>

@@ -82,13 +82,14 @@
           <div class="number">
             <t-input
               data-name$="{{option.name}}"
+              data-unit$="{{option.unit}}"
               auto-validate
-              pattern="[0-9]+"
+              pattern="[0-9]+|([0-9]*\.[0-9]+)"
               error-message="Has to be a number"
               label="{{option.label}}"
               value="{{option.value}}">
             </t-input>
-            <span>px</span>
+            <span>{{option.unit}}</span>
           </div>
         </template>
         <template is="dom-if" if="{{option.isString}}">

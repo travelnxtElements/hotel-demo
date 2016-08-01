@@ -17,21 +17,24 @@
         name = name.trim();
         value = value.trim();
 
-        let isColor = /#|(rgb)|(hsl)/.test(value);
-        let isNumber = /[0-9]+px/.test(value);
+        let isColor = /#|rgb|hsl/.test(value);
+        let numMatch = value.match(/([0-9]+)(px|em|rem|vw|vh|vmin|vmax|%)/);
+        let unit, isNumber = numMatch !== null;
 
         if (isNumber) {
-          value = value.match(/[0-9]+/)[0];
+          value = numMatch[1];
+          unit = numMatch[2];
         }
 
         return {
           name: name,
           label: label,
           value: value,
+          unit: unit,
           isColor: isColor,
           isNumber: isNumber,
           isString: !(isColor || isNumber)
-        }
+        };
       });
   };
 
@@ -50,7 +53,7 @@
     inputs = inputs.map(node => {
       return {
         name: node.getAttribute('data-name'),
-        value: node.value
+        value: node.value + node.getAttribute('data-unit')
       };
     });
 

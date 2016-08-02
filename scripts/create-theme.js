@@ -53,7 +53,7 @@
     inputs = inputs.map(node => {
       return {
         name: node.getAttribute('data-name'),
-        value: node.value + node.getAttribute('data-unit')
+        value: node.value + (node.getAttribute('data-unit') || '')
       };
     });
 

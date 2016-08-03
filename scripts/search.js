@@ -3,6 +3,7 @@
   let HotelDemo = window.HotelDemo;
 
   let app = document.getElementById('app');
+  HotelDemo.mixinSettings(app);
   let baseApiEndpoint = HotelDemo.baseApiEndpoint;
 
   app.authApiEndpoint = `${baseApiEndpoint}api/Authentication/Authenticate/context`;

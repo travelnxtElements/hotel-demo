@@ -64,6 +64,7 @@
   }
 
   let app = document.getElementById('app');
+  HotelDemo.mixinSettings(app);
   let baseApiEndpoint = HotelDemo.baseApiEndpoint;
   let genUrl = HotelDemo.genUrl.bind(null, baseApiEndpoint);
 

@@ -38,8 +38,21 @@
     }
 
     #submit {
+      position: fixed;
+      bottom: 0;
+      right: 0;
+      left: 0;
+      background-color: #EEE;
       display: flex;
       justify-content: center;
+    }
+
+    #submit > t-button:nth-child(1) {
+      margin-right: 20px;
+    }
+    
+    #space {
+      height: 60px;
     }
 
     .number {
@@ -63,26 +76,34 @@
 
   <template is="dom-bind" id="app">
 
-    <t-header icon="icons:home"
+    <t-header icon="icons:arrow-back"
       normal-heading
-      label="Create Theme"
+      label="Customize Theme"
       url="{{searchPageUrl}}">
     </t-header>
 
+    <t-section-header label="Branding"></t-section-header>
+
+    <t-section-header label="Choose Theme"></t-section-header>
+    <paper-listbox id="themes" selected="{{theme}}" on-selected-changed="changeTheme">
+      <paper-item>Default</paper-item>
+      <paper-item>Red</paper-item>
+      <paper-item>Purple</paper-item>
+    </paper-listbox>
+
+    <t-section-header label="Customize Theme"></t-section-header>
     <div id="themeOptions">
       <template is="dom-repeat" items="{{themeOptions}}" as="option">
         <template is="dom-if" if="{{option.isColor}}">
           <t-colorpicker
-            data-name$="{{option.name}}"
             label="{{option.label}}"
+            value="{{option.value}}"
             color="{{option.value}}">
           </t-colorpicker>
         </template>
         <template is="dom-if" if="{{option.isNumber}}">
           <div class="number">
             <t-input
-              data-name$="{{option.name}}"
-              data-unit$="{{option.unit}}"
               auto-validate
               pattern="[0-9]+|([0-9]*\.[0-9]+)"
               error-message="Has to be a number"
@@ -94,7 +115,6 @@
         </template>
         <template is="dom-if" if="{{option.isString}}">
           <t-input
-            data-name$="{{option.name}}"
             label="{{option.label}}"
             value="{{option.value}}">
           </t-input>
@@ -102,19 +122,21 @@
       </template>
     </div>
 
+    <div id="space"></div>
+
     <div id="submit">
+      <t-button class="primary" on-tap="applyTheme" label="Apply"></t-button>
       <t-button class="primary" on-tap="downloadTheme" label="Download"></t-button>
     </div>
 
-    <t-app-footer email="swat@tavisca.com" phone="800-459-1597"></t-app-footer>
-    <settings-dialog theme-url="{{themeUrl}}"></settings-dialog>
-    <iron-ajax auto handle-as="text" url="{{themeUrl}}" on-response="parseTheme"></iron-ajax>
+    <iron-ajax auto="{{!themeOptions}}" handle-as="text" url="{{themeUrl(theme)}}" on-response="parseTheme"></iron-ajax>
   </template>
 
   <script src="scripts/base.js"></script>
+  <script src="scripts/mixin-settings.js"></script>
   <script src="scripts/blob.js"></script>
   <script src="scripts/file-saver.js"></script>
-  <script src="scripts/create-theme.js"></script>
+  <script src="scripts/customize-theme.js"></script>
 </body>
 
 </html>

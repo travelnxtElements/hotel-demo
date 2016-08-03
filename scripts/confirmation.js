@@ -3,6 +3,7 @@
   let HotelDemo = window.HotelDemo;
 
   let app = document.getElementById('app');
+  HotelDemo.mixinSettings(app);
   let booking = HotelDemo.getItem('booking');
 
   // NOTE: Adds the itinerary description properties on `app`

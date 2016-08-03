@@ -54,6 +54,7 @@
   HotelDemo.redirectToGuestInfo = redirect.bind(null, 'guestinfo');
   HotelDemo.redirectToPayment = redirect.bind(null, 'payment');
   HotelDemo.redirectToConfirmation = redirect.bind(null, 'confirmation');
+  HotelDemo.redirectToCustomize = redirect.bind(null, 'customize-theme');
 
   HotelDemo.errorHandler = function(ev) {
     let toast = document.querySelector('#toast');

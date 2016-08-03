@@ -65,6 +65,7 @@
   }
 
   let app = document.getElementById('app');
+  HotelDemo.mixinSettings(app);
   let criteria = HotelDemo.getItem('criteria');
   let cartItem = HotelDemo.getItem('cart-item');
 

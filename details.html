@@ -155,14 +155,20 @@
 
     <paper-toast id="toast"></paper-toast>
 
-    <t-app-footer email="swat@tavisca.com" phone="800-459-1597"></t-app-footer>
+    <t-app-footer email="{{supportEmail}}" phone="{{supportPhone}}"></t-app-footer>
+    <paper-fab id="themeFab"
+      mini
+      icon="icons:settings"
+      on-tap="redirectToCustomize"
+      title="change theme">
+    </paper-fab>
 
   </template>
 
   <!-- TODO: somehow placing this below the app-footer causes image carousel to break -->
-  <settings-dialog></settings-dialog>
 
   <script src="scripts/base.js"></script>
+  <script src="scripts/mixin-settings.js"></script>
   <script src="scripts/mixin-search-recap.js"></script>
   <script src="scripts/details.js"></script>
 

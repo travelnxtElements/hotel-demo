@@ -2,7 +2,18 @@
   window.HotelDemo = window.HotelDemo || {};
   let HotelDemo = window.HotelDemo;
 
-  app.searchPageUrl = HotelDemo.getPageUrl('/');
+  let app = document.getElementById('app');
+  HotelDemo.mixinSettings(app);
+
+  let themeOptions = HotelDemo.getItem('theme-options');
+
+  app.searchPageUrl = document.referrer;
+
+  app.changeTheme = function(ev) {
+    let theme = ev.detail.value;
+    app.switchTheme(theme);
+    HotelDemo.setItem('theme', theme);
+  };
 
   app.parseTheme = function(ev) {
     let resp = ev.detail.response;
@@ -38,27 +49,14 @@
       });
   };
 
+  app.applyTheme = function() {
+    HotelDemo.setItem('theme-options', app.themeOptions);
+    Polymer.Base.importHref(app.getThemeUrl(app.themeOptions));
+  };
+
   app.downloadTheme = function(ev) {
-    let $ = document.querySelectorAll.bind(document);
-    let colors = Array.from($('#themeOptions t-colorpicker'));
-    let inputs = Array.from($('#themeOptions t-input'));
-
-    colors = colors.map(node => {
-      return {
-        name: node.getAttribute('data-name'),
-        value: node.color
-      };
-    });
-
-    inputs = inputs.map(node => {
-      return {
-        name: node.getAttribute('data-name'),
-        value: node.value + (node.getAttribute('data-unit') || '')
-      };
-    });
-
-    let optionsStr = colors.concat(inputs)
-      .map(opt => `    ${opt.name}: ${opt.value};`)
+    let optionsStr = app.themeOptions
+      .map(opt => `    ${opt.name}: ${opt.value}${opt.unit || ''};`)
       .join('\n');
 
     let theme = `<style is="custom-style">

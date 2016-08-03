@@ -54,6 +54,13 @@
     Polymer.Base.importHref(app.getThemeUrl(app.themeOptions));
   };
 
+  app.persistValue = function(ev) {
+    let key = ev.srcElement.getAttribute('data-key');
+    let value = ev.detail.value;
+
+    HotelDemo.setItem(key, value);
+  };
+
   app.downloadTheme = function(ev) {
     let optionsStr = app.themeOptions
       .map(opt => `    ${opt.name}: ${opt.value}${opt.unit || ''};`)

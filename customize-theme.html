@@ -22,7 +22,8 @@
 
     header,
     #themeOptions,
-    #submit {
+    #submit,
+    #branding {
       padding: 10px;
     }
     
@@ -55,6 +56,10 @@
       height: 60px;
     }
 
+    #branding > t-input {
+      margin-bottom: 20px;
+    }
+
     .number {
       position: relative;
       display: flex;
@@ -83,6 +88,57 @@
     </t-header>
 
     <t-section-header label="Branding"></t-section-header>
+    <div id="branding">
+      <t-input
+        auto-validate
+        pattern="https?://.+"
+        error-message="Has to be a url"
+        label="Logo Url"
+        data-key="logo-url"
+        on-value-changed="persistValue"
+        value="{{logoUrl}}">
+      </t-input>
+
+      <t-input
+        auto-validate
+        pattern=".+@.+\..+"
+        error-message="Has to be an email id"
+        label="Privacy Policy Url"
+        data-key="support-email"
+        on-value-changed="persistValue"
+        value="{{supportEmail}}">
+      </t-input>
+
+      <t-input
+        auto-validate
+        pattern="[0-9\-+]+"
+        error-message="Has to be a phone number"
+        label="Privacy Policy Url"
+        data-key="support-phone"
+        on-value-changed="persistValue"
+        value="{{supportPhone}}">
+      </t-input>
+
+      <t-input
+        auto-validate
+        pattern="https?://.+"
+        error-message="Has to be a url"
+        label="Terms Of Service Url"
+        data-key="tos-url"
+        on-value-changed="persistValue"
+        value="{{tosUrl}}">
+      </t-input>
+
+      <t-input
+        auto-validate
+        pattern="https?://.+"
+        error-message="Has to be a url"
+        label="Privacy Policy Url"
+        data-key="policy-url"
+        on-value-changed="persistValue"
+        value="{{policyUrl}}">
+      </t-input>
+    </div>
 
     <t-section-header label="Choose Theme"></t-section-header>
     <paper-listbox id="themes" selected="{{theme}}" on-selected-changed="changeTheme">

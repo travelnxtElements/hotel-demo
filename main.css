@@ -51,4 +51,9 @@ paper-item {
   #themeDialog {
     margin: 24px calc((500px - 192px) / 2);
   }
+
+  t-section-header {
+    padding: 10px 10px 0 10px;
+    background-color: #E1E1E1;
+  }
 }

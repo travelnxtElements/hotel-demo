@@ -4,6 +4,7 @@
 
   let app = document.getElementById('app');
   HotelDemo.mixinSettings(app);
+
   let baseApiEndpoint = HotelDemo.baseApiEndpoint;
   let genUrl = HotelDemo.genUrl.bind(null, baseApiEndpoint);
 
@@ -21,7 +22,7 @@
     app.carouselData = itinerary.photoUrls;
     app.itinerary = itinerary;
     app.activeTab = 0;
-    app.apiBaseUrl = baseApiEndpoint;
+    app.apiBaseUrl = HotelDemo.baseApiEndpoint;
     app.authToken = token;
     app.searchId = sid;
     app.inventoryId = itinerary.id;

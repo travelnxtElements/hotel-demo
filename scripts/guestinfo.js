@@ -2,7 +2,6 @@
   window.HotelDemo = window.HotelDemo || {};
   let HotelDemo = window.HotelDemo;
 
-  // FIXME: is it ok for this to be here?
   function validateInput() {
     let paxSegments = document.querySelectorAll('t-passenger-segment');
     let communication = document.querySelector('t-communication');

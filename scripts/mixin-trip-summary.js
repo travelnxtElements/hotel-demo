@@ -74,5 +74,9 @@
         app.displayPolicies = app.$.policyProvider._getUIPolicies(policies);
       }
     };
+
+    app.getGuestCount = function(cCount) {
+      return cCount ? `${app.adultCountText}, ${app.childrenCountText}` : app.adultCountText;
+    };
   };
 })(window, document);

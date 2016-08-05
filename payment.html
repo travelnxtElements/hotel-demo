@@ -43,35 +43,14 @@
       url="{{guestinfoPageUrl}}">
     </t-header>
 
-    <!-- FIXME: there should be a trip summary element -->
-    <t-section-header label="Trip summary" style="margin:0"></t-section-header>
-
-    <div  class="section-small font-12 secondary-text">
-      <div class="font-16 font-semi margin-bottom primary-text">
-        {{cartItem.inventory.name}}
-      </div>
-      <div class="margin-bottom">
-        {{stayStartDate}} - {{stayEndDate}}
-      </div>
-      <div class="layout horizontal margin-bottom">
-        <template is="dom-repeat" items="{{starRating}}">
-          <iron-icon class="icon-star" icon="icons:star"></iron-icon>
-        </template>
-      </div>
-      <div id="toggle" hidden>
-        <div class="margin-bottom">
-          {{adultCountText}}
-          <template is="dom-if" if="{{searchCriteria.rooms.0.children.quantity}}">
-            , {{childrenCountText}}
-          </template>
-        </div>
-        <div class="margin-bottom">{{cartItem.inventory.rooms.0.name}}</div>
-
-        <div  class="margin-bottom link-style" on-click="showPolicies">policy</div>
-        <div class="margin-bottom">{{cartItem.inventory.address}}</div>
-      </div>
-      <div id="more" class="link-style" on-click="toggle">more</div>
-    </div>
+    <t-hotel-trip-summary itinerary-name="{{cartItem.inventory.name}}"
+      stay-duration="{{stayStartDate}} - {{stayEndDate}}"
+      star-rating="{{starRating}}"
+      guest-count="{{getGuestCount(cartItem.inventory.rooms.0.children.quantity)}}"
+      itinerary-description="[[cartItem.inventory.rooms.0.name]]"
+      itinerary-address="{{cartItem.inventory.address}}">
+        <div class="margin-bottom link-style policy" on-click="showPolicies">policy</div>
+    </t-hotel-trip-summary>
 
     <t-overlay id="overlay" header="Policies">
       <t-hotel-room-policy-list policies="{{displayPolicies}}">

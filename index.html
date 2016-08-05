@@ -19,20 +19,29 @@
 <body unresolved>
 
   <template is="dom-bind" id="app">
-    <!-- FIXME: I don't want the back button. How do I disable it?. -->
-    <t-header icon="" url="">
+    <paper-toolbar>
       <img alt="Travlnxt" src="{{logoUrl}}">
-    </t-header>
+    </paper-toolbar>
 
-    <t-hotel-search id="searchComponent"></t-hotel-search>
-    <t-hotel-search-provider id="searchProvider"
-      api-base-url="{{apiBaseUrl}}"
-      api-relative-url="{{apiSearchUrl}}"
-      auth-token="{{authToken}}">
-    </t-hotel-search-provider>
+    <t-hotel-search id="searchComponent"
+      data-url="[[apiBaseUrl]]api/content/autosuggest/"
+      query-params="token=[[tokenResponse.authenticationToken]]">
+    </t-hotel-search>
 
-    <t-mystique-auth id="mysAuth"
-      name="mystiquedemo"
+    <t-hotel-search-api-decorator
+        input="[[searchedData]]"
+        output="{{searchRequest}}">
+    </t-hotel-search-api-decorator>
+
+    <t-search-api data="[[searchRequest]]"
+        api-base-url="[[apiBaseUrl]]"
+        api-relative-url="api/hotel/search"
+        auth-token="[[tokenResponse.authenticationToken]]"
+        on-t-search-api-success="_successHandler"
+        on-t-search-api-error="_errorHandler">
+    </t-search-api>
+
+    <t-mystique-auth name="mystiquedemo"
       cid="20043"
       token-response="{{tokenResponse}}"
       url="[[authApiEndpoint]]">

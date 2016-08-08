@@ -1,15 +1,11 @@
 body {
   margin: 0;
   position: relative;
+  transform: translate3d(0, 0, 0);
 }
 
 paper-item {
   cursor: pointer;
-}
-
-#themeDialog {
-  top: 0 !important;
-  margin: 24px calc((100vw - 192px) / 2);
 }
 
 #themeFab {
@@ -20,11 +16,17 @@ paper-item {
 }
 
 t-app-footer img {
-  display: none !important;
+  display: none;
 }
 
 paper-item {
   cursor: pointer;
+}
+
+.t-list-0 .absolute.t-list {
+  position: static;
+  background: transparent;
+  z-index: 0;
 }
 
 /* mobile is the default mode, extra handling needed for desktop */
@@ -40,16 +42,6 @@ paper-item {
     background-color: white;
     border-radius: 4px;
     min-height: 200px;
-  }
-
-  /* FIXME: this div should be inside t-list */
-  .absolute {
-    left: 0;
-    right: 0;
-  }
-
-  #themeDialog {
-    margin: 24px calc((500px - 192px) / 2);
   }
 
   t-section-header {

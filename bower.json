@@ -44,23 +44,11 @@
     "paper-fab": "PolymerElements/paper-fab#^1.2.0",
     "paper-dialog": "PolymerElements/paper-dialog#^1.1.0",
     "paper-listbox": "PolymerElements/paper-listbox#^1.0.0",
-    "paper-toolbar": "PolymerElements/paper-toolbar#^1.1.6"
+    "paper-toolbar": "PolymerElements/paper-toolbar#^1.1.6",
+    "t-stepper": "atomelements/t-stepper#^1.1.2"
   },
   "resolutions": {
-    "t-input": "^1.0.0",
-    "paper-styles": "^1.1.4",
-    "t-button": "^1.0.0",
-    "t-calendar": "^1.0.0",
-    "t-notify": "^1.0.0",
-    "iron-icons": "^1.1.3",
-    "t-image": "0.0.0",
-    "t-text-container": "master",
-    "t-dropdown-menu": "^1.2.1",
-    "iron-ajax": "^1.1.0",
-    "iron-icon": "^1.0.7",
-    "iron-a11y-keys-behavior": "^1.1.5",
-    "iron-flex-layout": "^1.2.1",
-    "paper-material": "^1.0.5",
-    "t-list": "^1.1.19"
+    "iron-icons": "^1.0.0",
+    "paper-styles": "^1.1.4"
   }
 }

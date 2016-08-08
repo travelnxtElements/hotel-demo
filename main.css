@@ -29,6 +29,10 @@ paper-item {
   z-index: 0;
 }
 
+t-button.t-button-0 {
+  display: block;
+}
+
 /* mobile is the default mode, extra handling needed for desktop */
 @media screen and (min-device-width: 500px) {
   html {

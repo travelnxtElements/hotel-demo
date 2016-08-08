@@ -146,13 +146,13 @@
 
     <t-section-header label="Choose Theme"></t-section-header>
     <paper-listbox id="themes" selected="{{theme}}" on-selected-changed="changeTheme">
-      <paper-item>Default</paper-item>
-      <paper-item>Red</paper-item>
-      <paper-item>Purple</paper-item>
+      <template is="dom-repeat" items="{{themes}}">
+        <paper-item>{{item.label}}</paper-item>
+      </template>
     </paper-listbox>
 
-    <t-section-header label="Customize Theme"></t-section-header>
-    <div id="themeOptions">
+    <t-section-header hidden$="{{hideCustom(theme)}}" label="Customize Theme"></t-section-header>
+    <div id="themeOptions" hidden$="{{hideCustom(theme)}}">
       <template is="dom-repeat" items="{{themeOptions}}" as="option">
         <template is="dom-if" if="{{option.isColor}}">
           <t-colorpicker
@@ -186,10 +186,10 @@
 
     <div id="submit" class="theme-submit">
       <t-button class="primary" on-tap="applyTheme" label="Apply"></t-button>
-      <t-button class="primary" on-tap="downloadTheme" label="Download"></t-button>
+      <t-button class="primary" hidden$="{{hideCustom(theme)}}" on-tap="downloadTheme" label="Download"></t-button>
     </div>
 
-    <iron-ajax auto="{{!themeOptions}}" handle-as="text" url="{{themeUrl(theme)}}" on-response="parseTheme"></iron-ajax>
+    <iron-ajax auto="{{!themeOptions}}" handle-as="text" url="{{defaultThemeUrl}}" on-response="parseTheme"></iron-ajax>
   </template>
 
   <script src="scripts/base.js"></script>

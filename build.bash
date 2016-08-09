@@ -4,24 +4,28 @@ set -e
 PATH="$PATH:./node_modules/.bin/"
 
 mkcp() {
-  file="$1"
-  dir="_site/$(dirname "$file")"
-  mkdir -p "$dir" && cp "$file" "$dir"
+  for file in "$@"
+  do
+    dir="_site/$(dirname "$file")"
+    mkdir -p "$dir" && cp "$file" "$dir"
+  done
 }
 
 printf "%-20s: Create _site dir if not present\n" "Create"
 mkdir -p _site
 
 printf "%-20s: Copy the files to _site dir\n" "Copy"
-cp *.{js,css,html} _site
+mkcp *.{css,html} scripts/*.js components/*.html
 
 printf "%-20s: Copy the polyfill\n" "Copy"
-mkcp "bower_components/webcomponentsjs/webcomponents-lite.min.js"
+mkcp bower_components/webcomponentsjs/webcomponents-lite.min.js
+
+printf "%-20s: Copy the pngs in credit card\n" "Copy"
+mkcp bower_components/t-creditcard/**/*.png
 
 printf "%-20s: Run the build step\n" "Vulcanize"
 vulcanize --inline-script --inline-css --strip-comments elements.html | \
 crisper --script-in-head=false --html _site/elements.html --js _site/build.js
-
 
 if [[ "$1" == "--deploy" ]]
 then
@@ -41,3 +45,4 @@ then
     git push origin gh-pages
     cd ../
 fi
+

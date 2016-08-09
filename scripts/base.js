@@ -39,7 +39,7 @@
   };
 
   HotelDemo.getPageUrl = function(page, params) {
-    let url = window.location.href.replace(/\/[\w\-]+\.html.*/, `/`);
+    let url = window.location.href.replace(/\/\w+\.html.*/, `/`);
     page = page === '/' ? '' : `${page}.html`;
 
     return HotelDemo.genUrl(url, page, params);

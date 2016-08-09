@@ -18,6 +18,7 @@
   <style>
     body {
       font-family: 'Open Sans';
+      transform: none;
     }
 
     header,
@@ -46,6 +47,9 @@
       background-color: #E1E1E1;
       display: flex;
       justify-content: center;
+      width: 100%;
+      margin: 0 auto;
+      box-sizing: border-box;
     }
 
     #submit > t-button:nth-child(1) {
@@ -180,7 +184,7 @@
 
     <div id="space"></div>
 
-    <div id="submit">
+    <div id="submit" class="theme-submit">
       <t-button class="primary" on-tap="applyTheme" label="Apply"></t-button>
       <t-button class="primary" on-tap="downloadTheme" label="Download"></t-button>
     </div>

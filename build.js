@@ -13632,95 +13632,6 @@ It will also ensure that focus remains in the dialog.
         }
       });
     })();
-Polymer({
-      is: 'paper-toolbar',
-
-      hostAttributes: {
-        'role': 'toolbar'
-      },
-
-      properties: {
-        /**
-         * Controls how the items are aligned horizontally when they are placed
-         * at the bottom.
-         * Options are `start`, `center`, `end`, `justified` and `around`.
-         */
-        bottomJustify: {
-          type: String,
-          value: ''
-        },
-
-        /**
-         * Controls how the items are aligned horizontally.
-         * Options are `start`, `center`, `end`, `justified` and `around`.
-         */
-        justify: {
-          type: String,
-          value: ''
-        },
-
-        /**
-         * Controls how the items are aligned horizontally when they are placed
-         * in the middle.
-         * Options are `start`, `center`, `end`, `justified` and `around`.
-         */
-        middleJustify: {
-          type: String,
-          value: ''
-        }
-
-      },
-
-      attached: function() {
-        this._observer = this._observe(this);
-        this._updateAriaLabelledBy();
-      },
-
-      detached: function() {
-        if (this._observer) {
-          this._observer.disconnect();
-        }
-      },
-
-      _observe: function(node) {
-        var observer = new MutationObserver(function() {
-          this._updateAriaLabelledBy();
-        }.bind(this));
-        observer.observe(node, {
-          childList: true,
-          subtree: true
-        });
-        return observer;
-      },
-
-      _updateAriaLabelledBy: function() {
-        var labelledBy = [];
-        var contents = Polymer.dom(this.root).querySelectorAll('content');
-        for (var content, index = 0; content = contents[index]; index++) {
-          var nodes = Polymer.dom(content).getDistributedNodes();
-          for (var node, jndex = 0; node = nodes[jndex]; jndex++) {
-            if (node.classList && node.classList.contains('title')) {
-              if (node.id) {
-                labelledBy.push(node.id);
-              } else {
-                var id = 'paper-toolbar-label-' + Math.floor(Math.random() * 10000);
-                node.id = id;
-                labelledBy.push(id);
-              }
-            }
-          }
-        }
-        if (labelledBy.length > 0) {
-          this.setAttribute('aria-labelledby', labelledBy.join(' '));
-        }
-      },
-
-      _computeBarExtraClasses: function(barJustify) {
-        if (!barJustify) return '';
-
-        return barJustify + (barJustify === 'justified' ? '' : '-justified');
-      }
-    });
 /**
    * The `iron-iconset-svg` element allows users to define their own icon sets
    * that contain svg icons. The svg icon elements should be children of the
@@ -24338,7 +24249,7 @@ Polymer({
       },
 
       /**
-       * Set noAnimation to true to disable animations
+       * Set noAnimation to true to disable animations.
        *
        * @attribute noAnimation
        */
@@ -24346,6 +24257,14 @@ Polymer({
         type: Boolean
       },
 
+      /**
+       * Stores the desired size of the collapse body.
+       * @private
+       */
+      _desiredSize: {
+        type: String,
+        value: ''
+      }
     },
 
     get dimension() {
@@ -24406,20 +24325,24 @@ Polymer({
      * @param {boolean=} animated if `true` updates the size with an animation, otherwise without.
      */
     updateSize: function(size, animated) {
+      // Consider 'auto' as '', to take full size.
+      size = size === 'auto' ? '' : size;
       // No change!
-      var curSize = this.style[this._dimensionMax];
-      if (curSize === size || (size === 'auto' && !curSize)) {
+      if (this._desiredSize === size) {
         return;
       }
 
+      this._desiredSize = size;
+
       this._updateTransition(false);
+      var willAnimate = animated && !this.noAnimation && this._isDisplayed;
       // If we can animate, must do some prep work.
-      if (animated && !this.noAnimation && this._isDisplayed) {
+      if (willAnimate) {
         // Animation will start at the current size.
         var startSize = this._calcSize();
         // For `auto` we must calculate what is the final size for the animation.
         // After the transition is done, _transitionEnd will set the size back to `auto`.
-        if (size === 'auto') {
+        if (size === '') {
           this.style[this._dimensionMax] = '';
           size = this._calcSize();
         }
@@ -24430,12 +24353,14 @@ Polymer({
         this.scrollTop = this.scrollTop;
         // Enable animation.
         this._updateTransition(true);
+        // If final size is the same as startSize it will not animate.
+        willAnimate = (size !== startSize);
       }
       // Set the final size.
-      if (size === 'auto') {
-        this.style[this._dimensionMax] = '';
-      } else {
-        this.style[this._dimensionMax] = size;
+      this.style[this._dimensionMax] = size;
+      // If it won't animate, call transitionEnd to set correct classes.
+      if (!willAnimate) {
+        this._transitionEnd();
       }
     },
 
@@ -24474,15 +24399,10 @@ Polymer({
       if (this.opened) {
         this.focus();
       }
-      if (this.noAnimation) {
-        this._transitionEnd();
-      }
     },
 
     _transitionEnd: function() {
-      if (this.opened) {
-        this.style[this._dimensionMax] = '';
-      }
+      this.style[this._dimensionMax] = this._desiredSize;
       this.toggleClass('iron-collapse-closed', !this.opened);
       this.toggleClass('iron-collapse-opened', this.opened);
       this._updateTransition(false);
@@ -24608,6 +24528,18 @@ Polymer({
     is: 't-header',
 
     properties: {
+        /**
+        * Fired when the left icon is clicked
+        *
+        * @event left-button-click
+        */ 
+
+        /**
+        * Fired when the right icon is clicked
+        *
+        * @event right-button-click
+        */ 
+
 
         /**
          * The label to display in the middle of the header if `normalHeading`
@@ -24648,6 +24580,17 @@ Polymer({
             type: String,
             reflectToAttribute: true,
             value: ''
+        },      
+
+
+        /**
+         * The icon to be displayed on the right side of the header if
+         * `normalHeadin` is set to false.
+         * @type {String}
+         */
+        hideLeftIcon: {
+            type: Boolean,
+            value: false
         },
 
         /**

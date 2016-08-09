@@ -52,4 +52,8 @@ t-button.t-button-0 {
     padding: 10px 10px 0 10px;
     background-color: #E1E1E1;
   }
+
+  #submit.theme-submit {
+    width: 500px;
+  }
 }

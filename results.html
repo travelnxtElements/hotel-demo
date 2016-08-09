@@ -20,7 +20,7 @@
       font-family: 'Open Sans';
     }
 
-    t-hotel-itinerary-item {
+    t-hotel-result-item {
       cursor: pointer;
     }
 
@@ -45,6 +45,10 @@
     </t-header>
 
     <t-list id="results"
+      data-api="[[apiBaseUrl]]api/hotel/results/[[sid]]/rates?token=[[token]]&$top=20&$select=[[selections]]"
+      filter-api="[[apiBaseUrl]]api/hotel/filter/[[sid]]/rates?token=[[token]]"
+      filter-results-api="[[apiBaseUrl]]api/hotel/results/filter/[[sid]]/rates?token=[[token]]&$top=20&$select=[[selections]]"
+      load-more
       search-icon="icons:search"
       filter-icon="icons:filter-list"
       token-param="inventories"
@@ -58,37 +62,36 @@
       no-results-filtered-for-search-term-message="Couldn't find any hotel names containing 'SEARCHTERM’.">
 
       <template>
-        <t-hotel-itinerary-item itinerary="{{item}}"></t-hotel-itinerary-item>
+        <!-- <hotel-itinerary itinerary="{{item}}"></hotel-itinerary> -->
+        <t-hotel-result-item itinerary="{{item}}"></t-hotel-result-item>
       </template>
     </t-list>
 
     <iron-ajax id="singleItineraryCall"
       method="GET"
+      url="[[apiBaseUrl]]api/hotel/results/[[sid]]/rates?token=[[token]]&$filter=Id eq '[[selectedHotelId]]'"
       content-type="application/json"
       handle-as="json"
       on-response="singleItinerarySuccess"
       on-error="singleItineraryError">
     </iron-ajax>
 
-    <template is="dom-if" if="[[loading]]">
-      <!--
-        FIXME: the `t-hotel-itinerary-item` component should gray out when
-        user clicks on it
-      -->
-      <t-fullpage-loader active>
-        <div>Please do not refresh the page, we are fetching details of the hotel...</div>
-      </t-fullpage-loader>
-    </template>
-
     <paper-toast id="toast"></paper-toast>
 
-    <t-app-footer email="swat@tavisca.com" phone="800-459-1597"></t-app-footer>
+    <t-app-footer email="{{supportEmail}}" phone="{{supportPhone}}"></t-app-footer>
+    <paper-fab id="themeFab"
+      mini
+      icon="icons:settings"
+      on-tap="redirectToCustomize"
+      title="change theme">
+    </paper-fab>
 
   </template>
 
-  <script src="base.js"></script>
-  <script src="mixin-search-recap.js"></script>
-  <script src="results.js"></script>
+  <script src="scripts/base.js"></script>
+  <script src="scripts/mixin-settings.js"></script>
+  <script src="scripts/mixin-search-recap.js"></script>
+  <script src="scripts/results.js"></script>
 
 </body>
 

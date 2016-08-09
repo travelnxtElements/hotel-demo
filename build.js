@@ -14,10 +14,12 @@ addEventListener('DOMContentLoaded', resolve);
 }());window.Polymer = {
 Settings: function () {
 var settings = window.Polymer || {};
+if (!settings.noUrlSettings) {
 var parts = location.search.slice(1).split('&');
 for (var i = 0, o; i < parts.length && (o = parts[i]); i++) {
 o = o.split('=');
 o[0] && (settings[o[0]] = o[1] || true);
+}
 }
 settings.wantShadow = settings.dom === 'shadow';
 settings.hasShadow = Boolean(Element.prototype.createShadowRoot);
@@ -165,8 +167,14 @@ _addFeature: function (feature) {
 this.extend(this, feature);
 },
 registerCallback: function () {
+if (settings.lazyRegister === 'max') {
+if (this.beforeRegister) {
+this.beforeRegister();
+}
+} else {
 this._desugarBehaviors();
 this._doBehavior('beforeRegister');
+}
 this._registerFeatures();
 if (!settings.lazyRegister) {
 this.ensureRegisterFinished();
@@ -185,7 +193,11 @@ ensureRegisterFinished: function () {
 this._ensureRegisterFinished(this);
 },
 _ensureRegisterFinished: function (proto) {
-if (proto.__hasRegisterFinished !== proto.is) {
+if (proto.__hasRegisterFinished !== proto.is || !proto.is) {
+if (settings.lazyRegister === 'max') {
+proto._desugarBehaviors();
+proto._doBehaviorOnly('beforeRegister');
+}
 proto.__hasRegisterFinished = proto.is;
 if (proto._finishRegisterFeatures) {
 proto._finishRegisterFeatures();
@@ -221,14 +233,14 @@ newValue
 _attributeChangedImpl: function (name) {
 this._setAttributeToProperty(this, name);
 },
-extend: function (prototype, api) {
-if (prototype && api) {
-var n$ = Object.getOwnPropertyNames(api);
+extend: function (target, source) {
+if (target && source) {
+var n$ = Object.getOwnPropertyNames(source);
 for (var i = 0, n; i < n$.length && (n = n$[i]); i++) {
-this.copyOwnProperty(n, api, prototype);
+this.copyOwnProperty(n, source, target);
 }
 }
-return prototype || api;
+return target || source;
 },
 mixin: function (target, source) {
 for (var i in source) {
@@ -419,6 +431,11 @@ for (var i = 0; i < this.behaviors.length; i++) {
 this._invokeBehavior(this.behaviors[i], name, args);
 }
 this._invokeBehavior(this, name, args);
+},
+_doBehaviorOnly: function (name, args) {
+for (var i = 0; i < this.behaviors.length; i++) {
+this._invokeBehavior(this.behaviors[i], name, args);
+}
 },
 _invokeBehavior: function (b, name, args) {
 var fn = b[name];
@@ -671,7 +688,7 @@ default:
 return value != null ? value : undefined;
 }
 }
-});Polymer.version = '1.6.0';Polymer.Base._addFeature({
+});Polymer.version = "1.6.1";Polymer.Base._addFeature({
 _registerFeatures: function () {
 this._prepIs();
 this._prepBehaviors();
@@ -3064,7 +3081,7 @@ at.value = a === 'style' ? resolveCss(v, ownerDocument) : resolve(v, ownerDocume
 }
 }
 function resolve(url, ownerDocument) {
-if (url && url[0] === '#') {
+if (url && ABS_URL.test(url)) {
 return url;
 }
 var resolver = getUrlResolver(ownerDocument);
@@ -3095,6 +3112,7 @@ var URL_ATTRS = {
 ],
 form: ['action']
 };
+var ABS_URL = /(^\/)|(^#)|(^[\w-\d]*:)/;
 var BINDING_RX = /\{\{|\[\[/;
 Polymer.ResolveUrl = {
 resolveCss: resolveCss,
@@ -3377,6 +3395,10 @@ return false;
 }();
 var IS_TOUCH_ONLY = navigator.userAgent.match(/iP(?:[oa]d|hone)|Android/);
 var mouseCanceller = function (mouseEvent) {
+var sc = mouseEvent.sourceCapabilities;
+if (sc && !sc.firesTouchEvents) {
+return;
+}
 mouseEvent[HANDLED_OBJ] = { skip: true };
 if (mouseEvent.type === 'click') {
 var path = Polymer.dom(mouseEvent).path;
@@ -4243,7 +4265,7 @@ node = node || this;
 var effects = node._propertyEffects && node._propertyEffects[property];
 if (effects) {
 node._propertySetter(property, value, effects, quiet);
-} else {
+} else if (node[property] !== value) {
 node[property] = value;
 }
 },
@@ -4720,9 +4742,6 @@ _applyEffectValue: function (info, value) {
 var node = this._nodes[info.index];
 var property = info.name;
 value = this._computeFinalAnnotationValue(node, property, value, info);
-if (info.customEvent && node[property] === value) {
-return;
-}
 if (info.kind == 'attribute') {
 this.serializeValueToAttribute(value, property, node);
 } else {
@@ -4790,6 +4809,7 @@ this._configure();
 },
 _configure: function () {
 this._configureAnnotationReferences();
+this._configureInstanceProperties();
 this._aboveConfig = this.mixin({}, this._config);
 var config = {};
 for (var i = 0; i < this.behaviors.length; i++) {
@@ -4802,13 +4822,18 @@ if (this._clients && this._clients.length) {
 this._distributeConfig(this._config);
 }
 },
+_configureInstanceProperties: function () {
+for (var i in this._propertyEffects) {
+if (!usePolyfillProto && this.hasOwnProperty(i)) {
+this._configValue(i, this[i]);
+delete this[i];
+}
+}
+},
 _configureProperties: function (properties, config) {
 for (var i in properties) {
 var c = properties[i];
-if (!usePolyfillProto && this.hasOwnProperty(i) && this._propertyEffects && this._propertyEffects[i]) {
-config[i] = this[i];
-delete this[i];
-} else if (c.value !== undefined) {
+if (c.value !== undefined) {
 var value = c.value;
 if (typeof value == 'function') {
 value = value.call(this, this._config);
@@ -5509,10 +5534,42 @@ return this.getCssBuildType(dm);
 getCssBuildType: function (element) {
 return element.getAttribute('css-build');
 },
+_findMatchingParen: function (text, start) {
+var level = 0;
+for (var i = start, l = text.length; i < l; i++) {
+switch (text[i]) {
+case '(':
+level++;
+break;
+case ')':
+if (--level === 0) {
+return i;
+}
+break;
+}
+}
+return -1;
+},
+processVariableAndFallback: function (str, callback) {
+var start = str.indexOf('var(');
+if (start === -1) {
+return callback(str, '', '', '');
+}
+var end = this._findMatchingParen(str, start + 3);
+var inner = str.substring(start + 4, end);
+var prefix = str.substring(0, start);
+var suffix = this.processVariableAndFallback(str.substring(end + 1), callback);
+var comma = inner.indexOf(',');
+if (comma === -1) {
+return callback(prefix, inner.trim(), '', suffix);
+}
+var value = inner.substring(0, comma).trim();
+var fallback = inner.substring(comma + 1).trim();
+return callback(prefix, value, fallback, suffix);
+},
 rx: {
 VAR_ASSIGN: /(?:^|[;\s{]\s*)(--[\w-]*?)\s*:\s*(?:([^;{]*)|{([^}]*)})(?:(?=[;\s}])|$)/gi,
 MIXIN_MATCH: /(?:^|\W+)@apply\s*\(?([^);\n]*)\)?/gi,
-VAR_MATCH: /(^|\W+)var\([\s]*([^,)]*)[\s]*,?[\s]*((?:[^,()]*)|(?:[^;()]*\([^;)]*\)+))[\s]*?\)/gi,
 VAR_CONSUMED: /(--[\w-]+)\s*([:,;)]|$)/gi,
 ANIMATION_MATCH: /(animation\s*:)|(animation-name\s*:)/,
 MEDIA_MATCH: /@media[^(]*(\([^)]*\))/,
@@ -5807,42 +5864,66 @@ STRIP: /%[^,]*$/
 var styleUtil = Polymer.StyleUtil;
 var MIXIN_MATCH = styleUtil.rx.MIXIN_MATCH;
 var VAR_ASSIGN = styleUtil.rx.VAR_ASSIGN;
-var VAR_MATCH = styleUtil.rx.VAR_MATCH;
+var BAD_VAR = /var\(\s*(--[^,]*),\s*(--[^)]*)\)/g;
 var APPLY_NAME_CLEAN = /;\s*/m;
+var INITIAL_INHERIT = /^\s*(initial)|(inherit)\s*$/;
 var MIXIN_VAR_SEP = '_-_';
 var mixinMap = {};
-function mapSet(name, prop) {
+function mapSet(name, props) {
 name = name.trim();
-mixinMap[name] = prop;
+mixinMap[name] = {
+properties: props,
+dependants: {}
+};
 }
 function mapGet(name) {
 name = name.trim();
 return mixinMap[name];
 }
+function replaceInitialOrInherit(property, value) {
+var match = INITIAL_INHERIT.exec(value);
+if (match) {
+if (match[1]) {
+value = ApplyShim._getInitialValueForProperty(property);
+} else {
+value = 'apply-shim-inherit';
+}
+}
+return value;
+}
 function cssTextToMap(text) {
 var props = text.split(';');
+var property, value;
 var out = {};
 for (var i = 0, p, sp; i < props.length; i++) {
 p = props[i];
 if (p) {
 sp = p.split(':');
 if (sp.length > 1) {
-out[sp[0].trim()] = sp.slice(1).join(':');
+property = sp[0].trim();
+value = replaceInitialOrInherit(property, sp.slice(1).join(':'));
+out[property] = value;
 }
 }
 }
 return out;
 }
+function invalidateMixinEntry(mixinEntry) {
+var currentProto = ApplyShim.__currentElementProto;
+var currentElementName = currentProto && currentProto.is;
+for (var elementName in mixinEntry.dependants) {
+if (elementName !== currentElementName) {
+mixinEntry.dependants[elementName].__applyShimInvalid = true;
+}
+}
+}
 function produceCssProperties(matchText, propertyName, valueProperty, valueMixin) {
 if (valueProperty) {
-VAR_MATCH.lastIndex = 0;
-var m = VAR_MATCH.exec(valueProperty);
-if (m) {
-var value = m[2];
-if (mapGet(value)) {
+styleUtil.processVariableAndFallback(valueProperty, function (prefix, value) {
+if (value && mapGet(value)) {
 valueMixin = '@apply ' + value + ';';
 }
-}
+});
 }
 if (!valueMixin) {
 return matchText;
@@ -5850,44 +5931,57 @@ return matchText;
 var mixinAsProperties = consumeCssProperties(valueMixin);
 var prefix = matchText.slice(0, matchText.indexOf('--'));
 var mixinValues = cssTextToMap(mixinAsProperties);
-var oldProperties = mapGet(propertyName);
 var combinedProps = mixinValues;
-if (oldProperties) {
-combinedProps = Polymer.Base.mixin(oldProperties, mixinValues);
+var mixinEntry = mapGet(propertyName);
+var oldProps = mixinEntry && mixinEntry.properties;
+if (oldProps) {
+combinedProps = Object.create(oldProps);
+combinedProps = Polymer.Base.mixin(combinedProps, mixinValues);
 } else {
 mapSet(propertyName, combinedProps);
 }
 var out = [];
 var p, v;
+var needToInvalidate = false;
 for (p in combinedProps) {
 v = mixinValues[p];
 if (v === undefined) {
 v = 'initial';
 }
+if (oldProps && !(p in oldProps)) {
+needToInvalidate = true;
+}
 out.push(propertyName + MIXIN_VAR_SEP + p + ': ' + v);
+}
+if (needToInvalidate) {
+invalidateMixinEntry(mixinEntry);
+}
+if (mixinEntry) {
+mixinEntry.properties = combinedProps;
+}
+if (valueProperty) {
+prefix = matchText + ';' + prefix;
 }
 return prefix + out.join('; ') + ';';
 }
-function fixVars(matchText, prefix, value, fallback) {
-if (!fallback || fallback.indexOf('--') !== 0) {
-return matchText;
-}
-return [
-prefix,
-'var(',
-value,
-', var(',
-fallback,
-'));'
-].join('');
+function fixVars(matchText, varA, varB) {
+return 'var(' + varA + ',' + 'var(' + varB + '));';
 }
 function atApplyToCssProperties(mixinName, fallbacks) {
 mixinName = mixinName.replace(APPLY_NAME_CLEAN, '');
 var vars = [];
-var mixinProperties = mapGet(mixinName);
-if (mixinProperties) {
+var mixinEntry = mapGet(mixinName);
+if (!mixinEntry) {
+mapSet(mixinName, {});
+mixinEntry = mapGet(mixinName);
+}
+if (mixinEntry) {
+var currentProto = ApplyShim.__currentElementProto;
+if (currentProto) {
+mixinEntry.dependants[currentProto.is] = currentProto;
+}
 var p, parts, f;
-for (p in mixinProperties) {
+for (p in mixinEntry.properties) {
 f = fallbacks && fallbacks[p];
 parts = [
 p,
@@ -5927,10 +6021,14 @@ MIXIN_MATCH.lastIndex = idx + replacement.length;
 return text;
 }
 var ApplyShim = {
+_measureElement: null,
 _map: mixinMap,
 _separator: MIXIN_VAR_SEP,
-transform: function (styles) {
+transform: function (styles, elementProto) {
+this.__currentElementProto = elementProto;
 styleUtil.forRulesInStyles(styles, this._boundTransformRule);
+elementProto.__applyShimInvalid = false;
+this.__currentElementProto = null;
 },
 transformRule: function (rule) {
 rule.cssText = this.transformCssText(rule.parsedCssText);
@@ -5939,9 +6037,17 @@ rule.selector = ':host > *';
 }
 },
 transformCssText: function (cssText) {
-cssText = cssText.replace(VAR_MATCH, fixVars);
+cssText = cssText.replace(BAD_VAR, fixVars);
 cssText = cssText.replace(VAR_ASSIGN, produceCssProperties);
 return consumeCssProperties(cssText);
+},
+_getInitialValueForProperty: function (property) {
+if (!this._measureElement) {
+this._measureElement = document.createElement('meta');
+this._measureElement.style.all = 'initial';
+document.head.appendChild(this._measureElement);
+}
+return window.getComputedStyle(this._measureElement).getPropertyValue(property);
 }
 };
 ApplyShim._boundTransformRule = ApplyShim.transformRule.bind(ApplyShim);
@@ -5978,7 +6084,7 @@ return;
 }
 this._styles = this._styles || this._collectStyles();
 if (settings.useNativeCSSProperties && !this.__cssBuild) {
-applyShim.transform(this._styles);
+applyShim.transform(this._styles, this);
 }
 var cssText = settings.useNativeCSSProperties && hasTargetedCssBuild ? this._styles.length && this._styles[0].textContent.trim() : styleTransformer.elementStyles(this);
 this._prepStyleProperties();
@@ -6066,6 +6172,7 @@ return mo;
 var matchesSelector = Polymer.DomApi.matchesSelector;
 var styleUtil = Polymer.StyleUtil;
 var styleTransformer = Polymer.StyleTransformer;
+var IS_IE = navigator.userAgent.match('Trident');
 var settings = Polymer.Settings;
 return {
 decorateStyles: function (styles, scope) {
@@ -6120,9 +6227,13 @@ return true;
 } else {
 var m, rx = this.rx.VAR_ASSIGN;
 var cssText = rule.parsedCssText;
+var value;
 var any;
 while (m = rx.exec(cssText)) {
-properties[m[1].trim()] = (m[2] || m[3]).trim();
+value = (m[2] || m[3]).trim();
+if (value !== 'inherit') {
+properties[m[1].trim()] = value;
+}
 any = true;
 }
 return any;
@@ -6156,11 +6267,16 @@ if (property.indexOf(';') >= 0) {
 property = this.valueForProperties(property, props);
 } else {
 var self = this;
-var fn = function (all, prefix, value, fallback) {
-var propertyValue = self.valueForProperty(props[value], props) || self.valueForProperty(props[fallback] || fallback, props) || fallback;
-return prefix + (propertyValue || '');
+var fn = function (prefix, value, fallback, suffix) {
+var propertyValue = self.valueForProperty(props[value], props);
+if (!propertyValue || propertyValue === 'initial') {
+propertyValue = self.valueForProperty(props[fallback] || fallback, props) || fallback;
+} else if (propertyValue === 'apply-shim-inherit') {
+propertyValue = 'inherit';
+}
+return prefix + (propertyValue || '') + suffix;
 };
-property = property.replace(this.rx.VAR_MATCH, fn);
+property = styleUtil.processVariableAndFallback(property, fn);
 }
 }
 return property && property.trim() || '';
@@ -6258,7 +6374,7 @@ var isRoot = parsedSelector === ':root';
 var isHost = parsedSelector.indexOf(':host') === 0;
 var cssBuild = scope.__cssBuild || style.__cssBuild;
 if (cssBuild === 'shady') {
-isRoot = parsedSelector === hostScope + '> *.' + hostScope || parsedSelector.indexOf('html') !== -1;
+isRoot = parsedSelector === hostScope + ' > *.' + hostScope || parsedSelector.indexOf('html') !== -1;
 isHost = !isRoot && parsedSelector.indexOf(hostScope) === 0;
 }
 if (cssBuild === 'shadow') {
@@ -6273,7 +6389,7 @@ if (isHost) {
 if (settings.useNativeShadow && !rule.transformedSelector) {
 rule.transformedSelector = styleTransformer._transformRuleCss(rule, styleTransformer._transformComplexSelector, scope.is, hostScope);
 }
-selectorToMatch = rule.transformedSelector || hostScope;
+selectorToMatch = rule.transformedSelector || rule.parsedSelector;
 }
 callback({
 selector: selectorToMatch,
@@ -6389,6 +6505,9 @@ style._useCount++;
 }
 element._customStyle = style;
 }
+if (IS_IE) {
+style.textContent = style.textContent;
+}
 return style;
 },
 mixinCustomStyle: function (props, customStyle) {
@@ -6401,14 +6520,20 @@ props[i] = v;
 }
 },
 updateNativeStyleProperties: function (element, properties) {
-for (var i = 0; i < element.style.length; i++) {
-element.style.removeProperty(element.style[i]);
+var oldPropertyNames = element.__customStyleProperties;
+if (oldPropertyNames) {
+for (var i = 0; i < oldPropertyNames.length; i++) {
+element.style.removeProperty(oldPropertyNames[i]);
 }
+}
+var propertyNames = [];
 for (var p in properties) {
 if (properties[p] !== null) {
 element.style.setProperty(p, properties[p]);
+propertyNames.push(p);
 }
 }
+element.__customStyleProperties = propertyNames;
 },
 rx: styleUtil.rx,
 XSCOPE_NAME: 'x-scope'
@@ -6542,6 +6667,23 @@ this._customStyle = null;
 _needsStyleProperties: function () {
 return Boolean(!nativeVariables && this._ownStylePropertyNames && this._ownStylePropertyNames.length);
 },
+_validateApplyShim: function () {
+if (this.__applyShimInvalid) {
+Polymer.ApplyShim.transform(this._styles, this.__proto__);
+var cssText = styleTransformer.elementStyles(this);
+if (nativeShadow) {
+var templateStyle = this._template.content.querySelector('style');
+if (templateStyle) {
+templateStyle.textContent = cssText;
+}
+} else {
+var shadyStyle = this._scopeStyle && this._scopeStyle.nextSibling;
+if (shadyStyle) {
+shadyStyle.textContent = cssText;
+}
+}
+}
+},
 _beforeAttached: function () {
 if ((!this._scopeSelector || this.__stylePropertiesInvalid) && this._needsStyleProperties()) {
 this.__stylePropertiesInvalid = false;
@@ -6560,6 +6702,9 @@ return styleDefaults;
 },
 _updateStyleProperties: function () {
 var info, scope = this._findStyleHost();
+if (!scope._styleProperties) {
+scope._computeStyleProperties();
+}
 if (!scope._styleCache) {
 scope._styleCache = new Polymer.StyleCache();
 }
@@ -6719,6 +6864,7 @@ this._setupDebouncers();
 this._setupShady();
 this._registerHost();
 if (this._template) {
+this._validateApplyShim();
 this._poolContent();
 this._beginHosting();
 this._stampTemplate();
@@ -7911,7 +8057,7 @@ this._instance._showHideChildren(hidden);
 },
 _forwardParentProp: function (prop, value) {
 if (this._instance) {
-this._instance[prop] = value;
+this._instance.__setProperty(prop, value, true);
 }
 },
 _forwardParentPath: function (path, value) {
@@ -7966,6 +8112,8 @@ return this.dataHost._scopeElementClass(element, selector);
 } else {
 return selector;
 }
+},
+_configureInstanceProperties: function () {
 },
 _prepConfigure: function () {
 var config = {};
@@ -8653,13 +8801,13 @@ Use `noOverlap` to position the element around another element without overlappi
    * size or hidden state of their children) and "resizables" (elements that need to be
    * notified when they are resized or un-hidden by their parents in order to take
    * action on their new measurements).
-   * 
+   *
    * Elements that perform measurement should add the `IronResizableBehavior` behavior to
    * their element definition and listen for the `iron-resize` event on themselves.
    * This event will be fired when they become showing after having been hidden,
    * when they are resized explicitly by another resizable, or when the window has been
    * resized.
-   * 
+   *
    * Note, the `iron-resize` event is non-bubbling.
    *
    * @polymerBehavior Polymer.IronResizableBehavior
@@ -8837,46 +8985,10 @@ Use `noOverlap` to position the element around another element without overlappi
      * Values taken from: http://www.w3.org/TR/2007/WD-DOM-Level-3-Events-20071221/keyset.html#KeySet-Set
      */
     var KEY_IDENTIFIER = {
+      'U+0008': 'backspace',
       'U+0009': 'tab',
       'U+001B': 'esc',
       'U+0020': 'space',
-      'U+002A': '*',
-      'U+0030': '0',
-      'U+0031': '1',
-      'U+0032': '2',
-      'U+0033': '3',
-      'U+0034': '4',
-      'U+0035': '5',
-      'U+0036': '6',
-      'U+0037': '7',
-      'U+0038': '8',
-      'U+0039': '9',
-      'U+0041': 'a',
-      'U+0042': 'b',
-      'U+0043': 'c',
-      'U+0044': 'd',
-      'U+0045': 'e',
-      'U+0046': 'f',
-      'U+0047': 'g',
-      'U+0048': 'h',
-      'U+0049': 'i',
-      'U+004A': 'j',
-      'U+004B': 'k',
-      'U+004C': 'l',
-      'U+004D': 'm',
-      'U+004E': 'n',
-      'U+004F': 'o',
-      'U+0050': 'p',
-      'U+0051': 'q',
-      'U+0052': 'r',
-      'U+0053': 's',
-      'U+0054': 't',
-      'U+0055': 'u',
-      'U+0056': 'v',
-      'U+0057': 'w',
-      'U+0058': 'x',
-      'U+0059': 'y',
-      'U+005A': 'z',
       'U+007F': 'del'
     };
 
@@ -8888,6 +9000,7 @@ Use `noOverlap` to position the element around another element without overlappi
      * Values from: https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent.keyCode#Value_of_keyCode
      */
     var KEY_CODE = {
+      8: 'backspace',
       9: 'tab',
       13: 'enter',
       27: 'esc',
@@ -8921,8 +9034,7 @@ Use `noOverlap` to position the element around another element without overlappi
      * the keyboard, with unprintable keys labeled nicely.
      *
      * However, on OS X, Alt+char can make a Unicode character that follows an
-     * Apple-specific mapping. In this case, we
-     * fall back to .keyCode.
+     * Apple-specific mapping. In this case, we fall back to .keyCode.
      */
     var KEY_CHAR = /[a-z0-9*]/;
 
@@ -8942,18 +9054,33 @@ Use `noOverlap` to position the element around another element without overlappi
      */
     var SPACE_KEY = /^space(bar)?/;
 
-    function transformKey(key) {
+    /**
+     * Matches ESC key.
+     *
+     * Value from: http://w3c.github.io/uievents-key/#key-Escape
+     */
+    var ESC_KEY = /^escape$/;
+
+    /**
+     * Transforms the key.
+     * @param {string} key The KeyBoardEvent.key
+     * @param {Boolean} [noSpecialChars] Limits the transformation to
+     * alpha-numeric characters.
+     */
+    function transformKey(key, noSpecialChars) {
       var validKey = '';
       if (key) {
         var lKey = key.toLowerCase();
-        if (lKey.length == 1) {
-          if (KEY_CHAR.test(lKey)) {
+        if (lKey === ' ' || SPACE_KEY.test(lKey)) {
+          validKey = 'space';
+        } else if (ESC_KEY.test(lKey)) {
+          validKey = 'esc';
+        } else if (lKey.length == 1) {
+          if (!noSpecialChars || KEY_CHAR.test(lKey)) {
             validKey = lKey;
           }
         } else if (ARROW_KEY.test(lKey)) {
           validKey = lKey.replace('arrow', '');
-        } else if (SPACE_KEY.test(lKey)) {
-          validKey = 'space';
         } else if (lKey == 'multiply') {
           // numpad '*' can map to Multiply on IE/Windows
           validKey = '*';
@@ -8967,8 +9094,11 @@ Use `noOverlap` to position the element around another element without overlappi
     function transformKeyIdentifier(keyIdent) {
       var validKey = '';
       if (keyIdent) {
-        if (IDENT_CHAR.test(keyIdent)) {
+        if (keyIdent in KEY_IDENTIFIER) {
           validKey = KEY_IDENTIFIER[keyIdent];
+        } else if (IDENT_CHAR.test(keyIdent)) {
+          keyIdent = parseInt(keyIdent.replace('U+', '0x'), 16);
+          validKey = String.fromCharCode(keyIdent).toLowerCase();
         } else {
           validKey = keyIdent.toLowerCase();
         }
@@ -8988,10 +9118,10 @@ Use `noOverlap` to position the element around another element without overlappi
           validKey = 'f' + (keyCode - 112);
         } else if (keyCode >= 48 && keyCode <= 57) {
           // top 0-9 keys
-          validKey = String(48 - keyCode);
+          validKey = String(keyCode - 48);
         } else if (keyCode >= 96 && keyCode <= 105) {
           // num pad 0-9
-          validKey = String(96 - keyCode);
+          validKey = String(keyCode - 96);
         } else {
           validKey = KEY_CODE[keyCode];
         }
@@ -8999,24 +9129,45 @@ Use `noOverlap` to position the element around another element without overlappi
       return validKey;
     }
 
-    function normalizedKeyForEvent(keyEvent) {
-      // fall back from .key, to .keyIdentifier, to .keyCode, and then to
-      // .detail.key to support artificial keyboard events
-      return transformKey(keyEvent.key) ||
+    /**
+      * Calculates the normalized key for a KeyboardEvent.
+      * @param {KeyboardEvent} keyEvent
+      * @param {Boolean} [noSpecialChars] Set to true to limit keyEvent.key
+      * transformation to alpha-numeric chars. This is useful with key
+      * combinations like shift + 2, which on FF for MacOS produces
+      * keyEvent.key = @
+      * To get 2 returned, set noSpecialChars = true
+      * To get @ returned, set noSpecialChars = false
+     */
+    function normalizedKeyForEvent(keyEvent, noSpecialChars) {
+      // Fall back from .key, to .keyIdentifier, to .keyCode, and then to
+      // .detail.key to support artificial keyboard events.
+      return transformKey(keyEvent.key, noSpecialChars) ||
         transformKeyIdentifier(keyEvent.keyIdentifier) ||
         transformKeyCode(keyEvent.keyCode) ||
-        transformKey(keyEvent.detail.key) || '';
+        transformKey(keyEvent.detail ? keyEvent.detail.key : keyEvent.detail, noSpecialChars) || '';
     }
 
-    function keyComboMatchesEvent(keyCombo, keyEvent) {
-      return normalizedKeyForEvent(keyEvent) === keyCombo.key &&
-        !!keyEvent.shiftKey === !!keyCombo.shiftKey &&
-        !!keyEvent.ctrlKey === !!keyCombo.ctrlKey &&
-        !!keyEvent.altKey === !!keyCombo.altKey &&
-        !!keyEvent.metaKey === !!keyCombo.metaKey;
+    function keyComboMatchesEvent(keyCombo, event) {
+      // For combos with modifiers we support only alpha-numeric keys
+      var keyEvent = normalizedKeyForEvent(event, keyCombo.hasModifiers);
+      return keyEvent === keyCombo.key &&
+        (!keyCombo.hasModifiers || (
+          !!event.shiftKey === !!keyCombo.shiftKey &&
+          !!event.ctrlKey === !!keyCombo.ctrlKey &&
+          !!event.altKey === !!keyCombo.altKey &&
+          !!event.metaKey === !!keyCombo.metaKey)
+        );
     }
 
     function parseKeyComboString(keyComboString) {
+      if (keyComboString.length === 1) {
+        return {
+          combo: keyComboString,
+          key: keyComboString,
+          event: 'keydown'
+        };
+      }
       return keyComboString.split('+').reduce(function(parsedKeyCombo, keyComboPart) {
         var eventParts = keyComboPart.split(':');
         var keyName = eventParts[0];
@@ -9024,6 +9175,7 @@ Use `noOverlap` to position the element around another element without overlappi
 
         if (keyName in MODIFIER_KEYS) {
           parsedKeyCombo[MODIFIER_KEYS[keyName]] = true;
+          parsedKeyCombo.hasModifiers = true;
         } else {
           parsedKeyCombo.key = keyName;
           parsedKeyCombo.event = event || 'keydown';
@@ -9036,11 +9188,10 @@ Use `noOverlap` to position the element around another element without overlappi
     }
 
     function parseEventString(eventString) {
-      return eventString.split(' ').map(function(keyComboString) {
+      return eventString.trim().split(' ').map(function(keyComboString) {
         return parseKeyComboString(keyComboString);
       });
     }
-
 
     /**
      * `Polymer.IronA11yKeysBehavior` provides a normalized interface for processing
@@ -9049,26 +9200,56 @@ Use `noOverlap` to position the element around another element without overlappi
      * and uses an expressive syntax to filter key presses.
      *
      * Use the `keyBindings` prototype property to express what combination of keys
-     * will trigger the event to fire.
+     * will trigger the callback. A key binding has the format
+     * `"KEY+MODIFIER:EVENT": "callback"` (`"KEY": "callback"` or
+     * `"KEY:EVENT": "callback"` are valid as well). Some examples:
      *
-     * Use the `key-event-target` attribute to set up event handlers on a specific
+     *      keyBindings: {
+     *        'space': '_onKeydown', // same as 'space:keydown'
+     *        'shift+tab': '_onKeydown',
+     *        'enter:keypress': '_onKeypress',
+     *        'esc:keyup': '_onKeyup'
+     *      }
+     *
+     * The callback will receive with an event containing the following information in `event.detail`:
+     *
+     *      _onKeydown: function(event) {
+     *        console.log(event.detail.combo); // KEY+MODIFIER, e.g. "shift+tab"
+     *        console.log(event.detail.key); // KEY only, e.g. "tab"
+     *        console.log(event.detail.event); // EVENT, e.g. "keydown"
+     *        console.log(event.detail.keyboardEvent); // the original KeyboardEvent
+     *      }
+     *
+     * Use the `keyEventTarget` attribute to set up event handlers on a specific
      * node.
-     * The `keys-pressed` event will fire when one of the key combinations set with the
-     * `keys` property is pressed.
+     *
+     * See the [demo source code](https://github.com/PolymerElements/iron-a11y-keys-behavior/blob/master/demo/x-key-aware.html)
+     * for an example.
      *
      * @demo demo/index.html
-     * @polymerBehavior IronA11yKeysBehavior
+     * @polymerBehavior
      */
     Polymer.IronA11yKeysBehavior = {
       properties: {
         /**
-         * The HTMLElement that will be firing relevant KeyboardEvents.
+         * The EventTarget that will be firing relevant KeyboardEvents. Set it to
+         * `null` to disable the listeners.
+         * @type {?EventTarget}
          */
         keyEventTarget: {
           type: Object,
           value: function() {
             return this;
           }
+        },
+
+        /**
+         * If true, this property will cause the implementing element to
+         * automatically stop propagation on any handled KeyboardEvents.
+         */
+        stopKeyboardEventPropagation: {
+          type: Boolean,
+          value: false
         },
 
         _boundKeyHandlers: {
@@ -9092,6 +9273,12 @@ Use `noOverlap` to position the element around another element without overlappi
         '_resetKeyEventListeners(keyEventTarget, _boundKeyHandlers)'
       ],
 
+
+      /**
+       * To be used to express what combination of keys  will trigger the relative
+       * callback. e.g. `keyBindings: { 'esc': '_onEscPressed'}`
+       * @type {Object}
+       */
       keyBindings: {},
 
       registered: function() {
@@ -9126,16 +9313,20 @@ Use `noOverlap` to position the element around another element without overlappi
         this._resetKeyEventListeners();
       },
 
+      /**
+       * Returns true if a keyboard event matches `eventString`.
+       *
+       * @param {KeyboardEvent} event
+       * @param {string} eventString
+       * @return {boolean}
+       */
       keyboardEventMatchesKeys: function(event, eventString) {
         var keyCombos = parseEventString(eventString);
-        var index;
-
-        for (index = 0; index < keyCombos.length; ++index) {
-          if (keyComboMatchesEvent(keyCombos[index], event)) {
+        for (var i = 0; i < keyCombos.length; ++i) {
+          if (keyComboMatchesEvent(keyCombos[i], event)) {
             return true;
           }
         }
-
         return false;
       },
 
@@ -9163,6 +9354,15 @@ Use `noOverlap` to position the element around another element without overlappi
         for (var eventString in this._imperativeKeyBindings) {
           this._addKeyBinding(eventString, this._imperativeKeyBindings[eventString]);
         }
+
+        // Give precedence to combos with modifiers to be checked first.
+        for (var eventName in this._keyBindings) {
+          this._keyBindings[eventName].sort(function (kb1, kb2) {
+            var b1 = kb1[0].hasModifiers;
+            var b2 = kb2[0].hasModifiers;
+            return (b1 === b2) ? 0 : b1 ? -1 : 1;
+          })
+        }
       },
 
       _addKeyBinding: function(eventString, handlerName) {
@@ -9186,6 +9386,9 @@ Use `noOverlap` to position the element around another element without overlappi
       },
 
       _listenKeyEventListeners: function() {
+        if (!this.keyEventTarget) {
+          return;
+        }
         Object.keys(this._keyBindings).forEach(function(eventName) {
           var keyBindings = this._keyBindings[eventName];
           var boundKeyHandler = this._onKeyBindingEvent.bind(this, keyBindings);
@@ -9214,23 +9417,39 @@ Use `noOverlap` to position the element around another element without overlappi
       },
 
       _onKeyBindingEvent: function(keyBindings, event) {
-        keyBindings.forEach(function(keyBinding) {
-          var keyCombo = keyBinding[0];
-          var handlerName = keyBinding[1];
+        if (this.stopKeyboardEventPropagation) {
+          event.stopPropagation();
+        }
 
-          if (!event.defaultPrevented && keyComboMatchesEvent(keyCombo, event)) {
+        // if event has been already prevented, don't do anything
+        if (event.defaultPrevented) {
+          return;
+        }
+
+        for (var i = 0; i < keyBindings.length; i++) {
+          var keyCombo = keyBindings[i][0];
+          var handlerName = keyBindings[i][1];
+          if (keyComboMatchesEvent(keyCombo, event)) {
             this._triggerKeyHandler(keyCombo, handlerName, event);
+            // exit the loop if eventDefault was prevented
+            if (event.defaultPrevented) {
+              return;
+            }
           }
-        }, this);
+        }
       },
 
       _triggerKeyHandler: function(keyCombo, handlerName, keyboardEvent) {
         var detail = Object.create(keyCombo);
         detail.keyboardEvent = keyboardEvent;
-
-        this[handlerName].call(this, new CustomEvent(keyCombo.event, {
-          detail: detail
-        }));
+        var event = new CustomEvent(keyCombo.event, {
+          detail: detail,
+          cancelable: true
+        });
+        this[handlerName].call(this, event);
+        if (event.defaultPrevented) {
+          keyboardEvent.preventDefault();
+        }
       }
     };
   })();
@@ -9368,9 +9587,8 @@ Use `noOverlap` to position the element around another element without overlappi
     this._backdropElement = null;
 
     // Enable document-wide tap recognizer.
-    Polymer.Gestures.add(document, 'tap', null);
-    // Need to have useCapture=true, Polymer.Gestures doesn't offer that.
-    document.addEventListener('tap', this._onCaptureClick.bind(this), true);
+    Polymer.Gestures.add(document, 'tap', this._onCaptureClick.bind(this));
+
     document.addEventListener('focus', this._onCaptureFocus.bind(this), true);
     document.addEventListener('keydown', this._onCaptureKeyDown.bind(this), true);
   };
@@ -9485,9 +9703,6 @@ Use `noOverlap` to position the element around another element without overlappi
       }
       this._overlays.splice(insertionIndex, 0, overlay);
 
-      // Get focused node.
-      var element = this.deepActiveElement;
-      overlay.restoreFocusNode = this._overlayParent(element) ? null : element;
       this.trackBackdrop();
     },
 
@@ -9501,12 +9716,6 @@ Use `noOverlap` to position the element around another element without overlappi
       }
       this._overlays.splice(i, 1);
 
-      var node = overlay.restoreFocusOnClose ? overlay.restoreFocusNode : null;
-      overlay.restoreFocusNode = null;
-      // Focus back only if still contained in document.body
-      if (node && Polymer.dom(document.body).deepContains(node)) {
-        node.focus();
-      }
       this.trackBackdrop();
     },
 
@@ -9538,15 +9747,7 @@ Use `noOverlap` to position the element around another element without overlappi
 
     focusOverlay: function() {
       var current = /** @type {?} */ (this.currentOverlay());
-      // We have to be careful to focus the next overlay _after_ any current
-      // transitions are complete (due to the state being toggled prior to the
-      // transition). Otherwise, we risk infinite recursion when a transitioning
-      // (closed) overlay becomes the current overlay.
-      //
-      // NOTE: We make the assumption that any overlay that completes a transition
-      // will call into focusOverlay to kick the process back off. Currently:
-      // transitionend -> _applyFocus -> focusOverlay.
-      if (current && !current.transitioning) {
+      if (current) {
         current._applyFocus();
       }
     },
@@ -9632,24 +9833,6 @@ Use `noOverlap` to position the element around another element without overlappi
      */
     _applyOverlayZ: function(overlay, aboveZ) {
       this._setZ(overlay, aboveZ + 2);
-    },
-
-    /**
-     * Returns the overlay containing the provided node. If the node is an overlay,
-     * it returns the node.
-     * @param {Element=} node
-     * @return {Element|undefined}
-     * @private
-     */
-    _overlayParent: function(node) {
-      while (node && node !== document.body) {
-        // Check if it is an overlay.
-        if (node._manager === this) {
-          return node;
-        }
-        // Use logical parentNode, or native ShadowRoot host.
-        node = Polymer.dom(node).parentNode || node.host;
-      }
     },
 
     /**
@@ -9953,17 +10136,17 @@ context. You should place this element as a child of `<body>` whenever possible.
       this.__shouldRemoveTabIndex = false;
       // Used for wrapping the focus on TAB / Shift+TAB.
       this.__firstFocusableNode = this.__lastFocusableNode = null;
-      // Used for requestAnimationFrame when opened changes.
-      this.__openChangedAsync = null;
-      // Used for requestAnimationFrame when iron-resize is fired.
-      this.__onIronResizeAsync = null;
+      // Used by __onNextAnimationFrame to cancel any previous callback.
+      this.__raf = null;
+      // Focused node before overlay gets opened. Can be restored on close.
+      this.__restoreFocusNode = null;
       this._ensureSetup();
     },
 
     attached: function() {
       // Call _openedChanged here so that position can be computed correctly.
       if (this.opened) {
-        this._openedChanged();
+        this._openedChanged(this.opened);
       }
       this._observer = Polymer.dom(this).observeNodes(this._onNodesChange);
     },
@@ -9971,7 +10154,11 @@ context. You should place this element as a child of `<body>` whenever possible.
     detached: function() {
       Polymer.dom(this).unobserveNodes(this._observer);
       this._observer = null;
-      this.opened = false;
+      if (this.__raf) {
+        window.cancelAnimationFrame(this.__raf);
+        this.__raf = null;
+      }
+      this._manager.removeOverlay(this);
     },
 
     /**
@@ -10021,27 +10208,16 @@ context. You should place this element as a child of `<body>` whenever possible.
       this.style.display = 'none';
     },
 
-    _openedChanged: function() {
-      if (this.opened) {
+    /**
+     * Called when `opened` changes.
+     * @param {boolean=} opened
+     * @protected
+     */
+    _openedChanged: function(opened) {
+      if (opened) {
         this.removeAttribute('aria-hidden');
       } else {
         this.setAttribute('aria-hidden', 'true');
-      }
-
-      // wait to call after ready only if we're initially open
-      if (!this._overlaySetup) {
-        return;
-      }
-
-      if (this.__openChangedAsync) {
-        window.cancelAnimationFrame(this.__openChangedAsync);
-      }
-
-      // Synchronously remove the overlay.
-      // The adding is done asynchronously to go out of the scope of the event
-      // which might have generated the opening.
-      if (!this.opened) {
-        this._manager.removeOverlay(this);
       }
 
       // Defer any animation-related code on attached
@@ -10052,19 +10228,8 @@ context. You should place this element as a child of `<body>` whenever possible.
 
       this.__isAnimating = true;
 
-      // requestAnimationFrame for non-blocking rendering
-      this.__openChangedAsync = window.requestAnimationFrame(function() {
-        this.__openChangedAsync = null;
-        if (this.opened) {
-          this._manager.addOverlay(this);
-          this._prepareRenderOpened();
-          this._renderOpened();
-        } else {
-          // Move the focus before actually closing.
-          this._applyFocus();
-          this._renderClosed();
-        }
-      }.bind(this));
+      // Use requestAnimationFrame for non-blocking rendering.
+      this.__onNextAnimationFrame(this.__openedChanged);
     },
 
     _canceledChanged: function() {
@@ -10091,6 +10256,8 @@ context. You should place this element as a child of `<body>` whenever possible.
      * @protected
      */
     _prepareRenderOpened: function() {
+      // Store focused node.
+      this.__restoreFocusNode = this._manager.deepActiveElement;
 
       // Needed to calculate the size of the overlay so that transitions on its size
       // will have the correct starting points.
@@ -10098,13 +10265,11 @@ context. You should place this element as a child of `<body>` whenever possible.
       this.refit();
       this._finishPositioning();
 
-      // Move the focus to the child node with [autofocus].
-      this._applyFocus();
-
-      // Safari will apply the focus to the autofocus element when displayed for the first time,
-      // so we blur it. Later, _applyFocus will set the focus if necessary.
+      // Safari will apply the focus to the autofocus element when displayed
+      // for the first time, so we make sure to return the focus where it was.
       if (this.noAutoFocus && document.activeElement === this._focusNode) {
         this._focusNode.blur();
+        this.__restoreFocusNode.focus();
       }
     },
 
@@ -10129,7 +10294,6 @@ context. You should place this element as a child of `<body>` whenever possible.
      * @protected
      */
     _finishRenderOpened: function() {
-
       this.notifyResize();
       this.__isAnimating = false;
 
@@ -10146,11 +10310,10 @@ context. You should place this element as a child of `<body>` whenever possible.
      * @protected
      */
     _finishRenderClosed: function() {
-      // Hide the overlay and remove the backdrop.
+      // Hide the overlay.
       this.style.display = 'none';
       // Reset z-index only at the end of the animation.
       this.style.zIndex = '';
-
       this.notifyResize();
       this.__isAnimating = false;
       this.fire('iron-overlay-closed', this.closingReason);
@@ -10186,10 +10349,22 @@ context. You should place this element as a child of `<body>` whenever possible.
         if (!this.noAutoFocus) {
           this._focusNode.focus();
         }
-      } else {
+      }
+      else {
         this._focusNode.blur();
         this._focusedChild = null;
-        this._manager.focusOverlay();
+        // Restore focus.
+        if (this.restoreFocusOnClose && this.__restoreFocusNode) {
+          this.__restoreFocusNode.focus();
+        }
+        this.__restoreFocusNode = null;
+        // If many overlays get closed at the same time, one of them would still
+        // be the currentOverlay even if already closed, and would call _applyFocus
+        // infinitely, so we check for this not to be the current overlay.
+        var currentOverlay = this._manager.currentOverlay();
+        if (currentOverlay && this !== currentOverlay) {
+          currentOverlay._applyFocus();
+        }
       }
     },
 
@@ -10287,15 +10462,8 @@ context. You should place this element as a child of `<body>` whenever possible.
      * @protected
      */
     _onIronResize: function() {
-      if (this.__onIronResizeAsync) {
-        window.cancelAnimationFrame(this.__onIronResizeAsync);
-        this.__onIronResizeAsync = null;
-      }
       if (this.opened && !this.__isAnimating) {
-        this.__onIronResizeAsync = window.requestAnimationFrame(function() {
-          this.__onIronResizeAsync = null;
-          this.refit();
-        }.bind(this));
+        this.__onNextAnimationFrame(this.refit);
       }
     },
 
@@ -10308,7 +10476,50 @@ context. You should place this element as a child of `<body>` whenever possible.
       if (this.opened && !this.__isAnimating) {
         this.notifyResize();
       }
+    },
+
+    /**
+     * Tasks executed when opened changes: prepare for the opening, move the
+     * focus, update the manager, render opened/closed.
+     * @private
+     */
+    __openedChanged: function() {
+      if (this.opened) {
+        // Make overlay visible, then add it to the manager.
+        this._prepareRenderOpened();
+        this._manager.addOverlay(this);
+        // Move the focus to the child node with [autofocus].
+        this._applyFocus();
+
+        this._renderOpened();
+      } else {
+        // Remove overlay, then restore the focus before actually closing.
+        this._manager.removeOverlay(this);
+        this._applyFocus();
+
+        this._renderClosed();
+      }
+    },
+
+    /**
+     * Executes a callback on the next animation frame, overriding any previous
+     * callback awaiting for the next animation frame. e.g.
+     * `__onNextAnimationFrame(callback1) && __onNextAnimationFrame(callback2)`;
+     * `callback1` will never be invoked.
+     * @param {!Function} callback Its `this` parameter is the overlay itself.
+     * @private
+     */
+    __onNextAnimationFrame: function(callback) {
+      if (this.__raf) {
+        window.cancelAnimationFrame(this.__raf);
+      }
+      var self = this;
+      this.__raf = window.requestAnimationFrame(function nextAnimationFrame() {
+        self.__raf = null;
+        callback.call(self);
+      });
     }
+
   };
 
   /** @polymerBehavior */
@@ -10918,14 +11129,2607 @@ Polymer({
 
     });
 /**
+   * @demo demo/index.html
+   * @polymerBehavior
+   */
+  Polymer.IronControlState = {
+
+    properties: {
+
+      /**
+       * If true, the element currently has focus.
+       */
+      focused: {
+        type: Boolean,
+        value: false,
+        notify: true,
+        readOnly: true,
+        reflectToAttribute: true
+      },
+
+      /**
+       * If true, the user cannot interact with this element.
+       */
+      disabled: {
+        type: Boolean,
+        value: false,
+        notify: true,
+        observer: '_disabledChanged',
+        reflectToAttribute: true
+      },
+
+      _oldTabIndex: {
+        type: Number
+      },
+
+      _boundFocusBlurHandler: {
+        type: Function,
+        value: function() {
+          return this._focusBlurHandler.bind(this);
+        }
+      }
+
+    },
+
+    observers: [
+      '_changedControlState(focused, disabled)'
+    ],
+
+    ready: function() {
+      this.addEventListener('focus', this._boundFocusBlurHandler, true);
+      this.addEventListener('blur', this._boundFocusBlurHandler, true);
+    },
+
+    _focusBlurHandler: function(event) {
+      // NOTE(cdata):  if we are in ShadowDOM land, `event.target` will
+      // eventually become `this` due to retargeting; if we are not in
+      // ShadowDOM land, `event.target` will eventually become `this` due
+      // to the second conditional which fires a synthetic event (that is also
+      // handled). In either case, we can disregard `event.path`.
+
+      if (event.target === this) {
+        this._setFocused(event.type === 'focus');
+      } else if (!this.shadowRoot) {
+        var target = /** @type {Node} */(Polymer.dom(event).localTarget);
+        if (!this.isLightDescendant(target)) {
+          this.fire(event.type, {sourceEvent: event}, {
+            node: this,
+            bubbles: event.bubbles,
+            cancelable: event.cancelable
+          });
+        }
+      }
+    },
+
+    _disabledChanged: function(disabled, old) {
+      this.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+      this.style.pointerEvents = disabled ? 'none' : '';
+      if (disabled) {
+        this._oldTabIndex = this.tabIndex;
+        this._setFocused(false);
+        this.tabIndex = -1;
+        this.blur();
+      } else if (this._oldTabIndex !== undefined) {
+        this.tabIndex = this._oldTabIndex;
+      }
+    },
+
+    _changedControlState: function() {
+      // _controlStateChanged is abstract, follow-on behaviors may implement it
+      if (this._controlStateChanged) {
+        this._controlStateChanged();
+      }
+    }
+
+  };
+/**
+   * @demo demo/index.html
+   * @polymerBehavior Polymer.IronButtonState
+   */
+  Polymer.IronButtonStateImpl = {
+
+    properties: {
+
+      /**
+       * If true, the user is currently holding down the button.
+       */
+      pressed: {
+        type: Boolean,
+        readOnly: true,
+        value: false,
+        reflectToAttribute: true,
+        observer: '_pressedChanged'
+      },
+
+      /**
+       * If true, the button toggles the active state with each tap or press
+       * of the spacebar.
+       */
+      toggles: {
+        type: Boolean,
+        value: false,
+        reflectToAttribute: true
+      },
+
+      /**
+       * If true, the button is a toggle and is currently in the active state.
+       */
+      active: {
+        type: Boolean,
+        value: false,
+        notify: true,
+        reflectToAttribute: true
+      },
+
+      /**
+       * True if the element is currently being pressed by a "pointer," which
+       * is loosely defined as mouse or touch input (but specifically excluding
+       * keyboard input).
+       */
+      pointerDown: {
+        type: Boolean,
+        readOnly: true,
+        value: false
+      },
+
+      /**
+       * True if the input device that caused the element to receive focus
+       * was a keyboard.
+       */
+      receivedFocusFromKeyboard: {
+        type: Boolean,
+        readOnly: true
+      },
+
+      /**
+       * The aria attribute to be set if the button is a toggle and in the
+       * active state.
+       */
+      ariaActiveAttribute: {
+        type: String,
+        value: 'aria-pressed',
+        observer: '_ariaActiveAttributeChanged'
+      }
+    },
+
+    listeners: {
+      down: '_downHandler',
+      up: '_upHandler',
+      tap: '_tapHandler'
+    },
+
+    observers: [
+      '_detectKeyboardFocus(focused)',
+      '_activeChanged(active, ariaActiveAttribute)'
+    ],
+
+    keyBindings: {
+      'enter:keydown': '_asyncClick',
+      'space:keydown': '_spaceKeyDownHandler',
+      'space:keyup': '_spaceKeyUpHandler',
+    },
+
+    _mouseEventRe: /^mouse/,
+
+    _tapHandler: function() {
+      if (this.toggles) {
+       // a tap is needed to toggle the active state
+        this._userActivate(!this.active);
+      } else {
+        this.active = false;
+      }
+    },
+
+    _detectKeyboardFocus: function(focused) {
+      this._setReceivedFocusFromKeyboard(!this.pointerDown && focused);
+    },
+
+    // to emulate native checkbox, (de-)activations from a user interaction fire
+    // 'change' events
+    _userActivate: function(active) {
+      if (this.active !== active) {
+        this.active = active;
+        this.fire('change');
+      }
+    },
+
+    _downHandler: function(event) {
+      this._setPointerDown(true);
+      this._setPressed(true);
+      this._setReceivedFocusFromKeyboard(false);
+    },
+
+    _upHandler: function() {
+      this._setPointerDown(false);
+      this._setPressed(false);
+    },
+
+    /**
+     * @param {!KeyboardEvent} event .
+     */
+    _spaceKeyDownHandler: function(event) {
+      var keyboardEvent = event.detail.keyboardEvent;
+      var target = Polymer.dom(keyboardEvent).localTarget;
+
+      // Ignore the event if this is coming from a focused light child, since that
+      // element will deal with it.
+      if (this.isLightDescendant(/** @type {Node} */(target)))
+        return;
+
+      keyboardEvent.preventDefault();
+      keyboardEvent.stopImmediatePropagation();
+      this._setPressed(true);
+    },
+
+    /**
+     * @param {!KeyboardEvent} event .
+     */
+    _spaceKeyUpHandler: function(event) {
+      var keyboardEvent = event.detail.keyboardEvent;
+      var target = Polymer.dom(keyboardEvent).localTarget;
+
+      // Ignore the event if this is coming from a focused light child, since that
+      // element will deal with it.
+      if (this.isLightDescendant(/** @type {Node} */(target)))
+        return;
+
+      if (this.pressed) {
+        this._asyncClick();
+      }
+      this._setPressed(false);
+    },
+
+    // trigger click asynchronously, the asynchrony is useful to allow one
+    // event handler to unwind before triggering another event
+    _asyncClick: function() {
+      this.async(function() {
+        this.click();
+      }, 1);
+    },
+
+    // any of these changes are considered a change to button state
+
+    _pressedChanged: function(pressed) {
+      this._changedButtonState();
+    },
+
+    _ariaActiveAttributeChanged: function(value, oldValue) {
+      if (oldValue && oldValue != value && this.hasAttribute(oldValue)) {
+        this.removeAttribute(oldValue);
+      }
+    },
+
+    _activeChanged: function(active, ariaActiveAttribute) {
+      if (this.toggles) {
+        this.setAttribute(this.ariaActiveAttribute,
+                          active ? 'true' : 'false');
+      } else {
+        this.removeAttribute(this.ariaActiveAttribute);
+      }
+      this._changedButtonState();
+    },
+
+    _controlStateChanged: function() {
+      if (this.disabled) {
+        this._setPressed(false);
+      } else {
+        this._changedButtonState();
+      }
+    },
+
+    // provide hook for follow-on behaviors to react to button-state
+
+    _changedButtonState: function() {
+      if (this._buttonStateChanged) {
+        this._buttonStateChanged(); // abstract
+      }
+    }
+
+  };
+
+  /** @polymerBehavior */
+  Polymer.IronButtonState = [
+    Polymer.IronA11yKeysBehavior,
+    Polymer.IronButtonStateImpl
+  ];
+(function() {
+    var Utility = {
+      distance: function(x1, y1, x2, y2) {
+        var xDelta = (x1 - x2);
+        var yDelta = (y1 - y2);
+
+        return Math.sqrt(xDelta * xDelta + yDelta * yDelta);
+      },
+
+      now: window.performance && window.performance.now ?
+          window.performance.now.bind(window.performance) : Date.now
+    };
+
+    /**
+     * @param {HTMLElement} element
+     * @constructor
+     */
+    function ElementMetrics(element) {
+      this.element = element;
+      this.width = this.boundingRect.width;
+      this.height = this.boundingRect.height;
+
+      this.size = Math.max(this.width, this.height);
+    }
+
+    ElementMetrics.prototype = {
+      get boundingRect () {
+        return this.element.getBoundingClientRect();
+      },
+
+      furthestCornerDistanceFrom: function(x, y) {
+        var topLeft = Utility.distance(x, y, 0, 0);
+        var topRight = Utility.distance(x, y, this.width, 0);
+        var bottomLeft = Utility.distance(x, y, 0, this.height);
+        var bottomRight = Utility.distance(x, y, this.width, this.height);
+
+        return Math.max(topLeft, topRight, bottomLeft, bottomRight);
+      }
+    };
+
+    /**
+     * @param {HTMLElement} element
+     * @constructor
+     */
+    function Ripple(element) {
+      this.element = element;
+      this.color = window.getComputedStyle(element).color;
+
+      this.wave = document.createElement('div');
+      this.waveContainer = document.createElement('div');
+      this.wave.style.backgroundColor = this.color;
+      this.wave.classList.add('wave');
+      this.waveContainer.classList.add('wave-container');
+      Polymer.dom(this.waveContainer).appendChild(this.wave);
+
+      this.resetInteractionState();
+    }
+
+    Ripple.MAX_RADIUS = 300;
+
+    Ripple.prototype = {
+      get recenters() {
+        return this.element.recenters;
+      },
+
+      get center() {
+        return this.element.center;
+      },
+
+      get mouseDownElapsed() {
+        var elapsed;
+
+        if (!this.mouseDownStart) {
+          return 0;
+        }
+
+        elapsed = Utility.now() - this.mouseDownStart;
+
+        if (this.mouseUpStart) {
+          elapsed -= this.mouseUpElapsed;
+        }
+
+        return elapsed;
+      },
+
+      get mouseUpElapsed() {
+        return this.mouseUpStart ?
+          Utility.now () - this.mouseUpStart : 0;
+      },
+
+      get mouseDownElapsedSeconds() {
+        return this.mouseDownElapsed / 1000;
+      },
+
+      get mouseUpElapsedSeconds() {
+        return this.mouseUpElapsed / 1000;
+      },
+
+      get mouseInteractionSeconds() {
+        return this.mouseDownElapsedSeconds + this.mouseUpElapsedSeconds;
+      },
+
+      get initialOpacity() {
+        return this.element.initialOpacity;
+      },
+
+      get opacityDecayVelocity() {
+        return this.element.opacityDecayVelocity;
+      },
+
+      get radius() {
+        var width2 = this.containerMetrics.width * this.containerMetrics.width;
+        var height2 = this.containerMetrics.height * this.containerMetrics.height;
+        var waveRadius = Math.min(
+          Math.sqrt(width2 + height2),
+          Ripple.MAX_RADIUS
+        ) * 1.1 + 5;
+
+        var duration = 1.1 - 0.2 * (waveRadius / Ripple.MAX_RADIUS);
+        var timeNow = this.mouseInteractionSeconds / duration;
+        var size = waveRadius * (1 - Math.pow(80, -timeNow));
+
+        return Math.abs(size);
+      },
+
+      get opacity() {
+        if (!this.mouseUpStart) {
+          return this.initialOpacity;
+        }
+
+        return Math.max(
+          0,
+          this.initialOpacity - this.mouseUpElapsedSeconds * this.opacityDecayVelocity
+        );
+      },
+
+      get outerOpacity() {
+        // Linear increase in background opacity, capped at the opacity
+        // of the wavefront (waveOpacity).
+        var outerOpacity = this.mouseUpElapsedSeconds * 0.3;
+        var waveOpacity = this.opacity;
+
+        return Math.max(
+          0,
+          Math.min(outerOpacity, waveOpacity)
+        );
+      },
+
+      get isOpacityFullyDecayed() {
+        return this.opacity < 0.01 &&
+          this.radius >= Math.min(this.maxRadius, Ripple.MAX_RADIUS);
+      },
+
+      get isRestingAtMaxRadius() {
+        return this.opacity >= this.initialOpacity &&
+          this.radius >= Math.min(this.maxRadius, Ripple.MAX_RADIUS);
+      },
+
+      get isAnimationComplete() {
+        return this.mouseUpStart ?
+          this.isOpacityFullyDecayed : this.isRestingAtMaxRadius;
+      },
+
+      get translationFraction() {
+        return Math.min(
+          1,
+          this.radius / this.containerMetrics.size * 2 / Math.sqrt(2)
+        );
+      },
+
+      get xNow() {
+        if (this.xEnd) {
+          return this.xStart + this.translationFraction * (this.xEnd - this.xStart);
+        }
+
+        return this.xStart;
+      },
+
+      get yNow() {
+        if (this.yEnd) {
+          return this.yStart + this.translationFraction * (this.yEnd - this.yStart);
+        }
+
+        return this.yStart;
+      },
+
+      get isMouseDown() {
+        return this.mouseDownStart && !this.mouseUpStart;
+      },
+
+      resetInteractionState: function() {
+        this.maxRadius = 0;
+        this.mouseDownStart = 0;
+        this.mouseUpStart = 0;
+
+        this.xStart = 0;
+        this.yStart = 0;
+        this.xEnd = 0;
+        this.yEnd = 0;
+        this.slideDistance = 0;
+
+        this.containerMetrics = new ElementMetrics(this.element);
+      },
+
+      draw: function() {
+        var scale;
+        var translateString;
+        var dx;
+        var dy;
+
+        this.wave.style.opacity = this.opacity;
+
+        scale = this.radius / (this.containerMetrics.size / 2);
+        dx = this.xNow - (this.containerMetrics.width / 2);
+        dy = this.yNow - (this.containerMetrics.height / 2);
+
+
+        // 2d transform for safari because of border-radius and overflow:hidden clipping bug.
+        // https://bugs.webkit.org/show_bug.cgi?id=98538
+        this.waveContainer.style.webkitTransform = 'translate(' + dx + 'px, ' + dy + 'px)';
+        this.waveContainer.style.transform = 'translate3d(' + dx + 'px, ' + dy + 'px, 0)';
+        this.wave.style.webkitTransform = 'scale(' + scale + ',' + scale + ')';
+        this.wave.style.transform = 'scale3d(' + scale + ',' + scale + ',1)';
+      },
+
+      /** @param {Event=} event */
+      downAction: function(event) {
+        var xCenter = this.containerMetrics.width / 2;
+        var yCenter = this.containerMetrics.height / 2;
+
+        this.resetInteractionState();
+        this.mouseDownStart = Utility.now();
+
+        if (this.center) {
+          this.xStart = xCenter;
+          this.yStart = yCenter;
+          this.slideDistance = Utility.distance(
+            this.xStart, this.yStart, this.xEnd, this.yEnd
+          );
+        } else {
+          this.xStart = event ?
+              event.detail.x - this.containerMetrics.boundingRect.left :
+              this.containerMetrics.width / 2;
+          this.yStart = event ?
+              event.detail.y - this.containerMetrics.boundingRect.top :
+              this.containerMetrics.height / 2;
+        }
+
+        if (this.recenters) {
+          this.xEnd = xCenter;
+          this.yEnd = yCenter;
+          this.slideDistance = Utility.distance(
+            this.xStart, this.yStart, this.xEnd, this.yEnd
+          );
+        }
+
+        this.maxRadius = this.containerMetrics.furthestCornerDistanceFrom(
+          this.xStart,
+          this.yStart
+        );
+
+        this.waveContainer.style.top =
+          (this.containerMetrics.height - this.containerMetrics.size) / 2 + 'px';
+        this.waveContainer.style.left =
+          (this.containerMetrics.width - this.containerMetrics.size) / 2 + 'px';
+
+        this.waveContainer.style.width = this.containerMetrics.size + 'px';
+        this.waveContainer.style.height = this.containerMetrics.size + 'px';
+      },
+
+      /** @param {Event=} event */
+      upAction: function(event) {
+        if (!this.isMouseDown) {
+          return;
+        }
+
+        this.mouseUpStart = Utility.now();
+      },
+
+      remove: function() {
+        Polymer.dom(this.waveContainer.parentNode).removeChild(
+          this.waveContainer
+        );
+      }
+    };
+
+    Polymer({
+      is: 'paper-ripple',
+
+      behaviors: [
+        Polymer.IronA11yKeysBehavior
+      ],
+
+      properties: {
+        /**
+         * The initial opacity set on the wave.
+         *
+         * @attribute initialOpacity
+         * @type number
+         * @default 0.25
+         */
+        initialOpacity: {
+          type: Number,
+          value: 0.25
+        },
+
+        /**
+         * How fast (opacity per second) the wave fades out.
+         *
+         * @attribute opacityDecayVelocity
+         * @type number
+         * @default 0.8
+         */
+        opacityDecayVelocity: {
+          type: Number,
+          value: 0.8
+        },
+
+        /**
+         * If true, ripples will exhibit a gravitational pull towards
+         * the center of their container as they fade away.
+         *
+         * @attribute recenters
+         * @type boolean
+         * @default false
+         */
+        recenters: {
+          type: Boolean,
+          value: false
+        },
+
+        /**
+         * If true, ripples will center inside its container
+         *
+         * @attribute recenters
+         * @type boolean
+         * @default false
+         */
+        center: {
+          type: Boolean,
+          value: false
+        },
+
+        /**
+         * A list of the visual ripples.
+         *
+         * @attribute ripples
+         * @type Array
+         * @default []
+         */
+        ripples: {
+          type: Array,
+          value: function() {
+            return [];
+          }
+        },
+
+        /**
+         * True when there are visible ripples animating within the
+         * element.
+         */
+        animating: {
+          type: Boolean,
+          readOnly: true,
+          reflectToAttribute: true,
+          value: false
+        },
+
+        /**
+         * If true, the ripple will remain in the "down" state until `holdDown`
+         * is set to false again.
+         */
+        holdDown: {
+          type: Boolean,
+          value: false,
+          observer: '_holdDownChanged'
+        },
+
+        /**
+         * If true, the ripple will not generate a ripple effect
+         * via pointer interaction.
+         * Calling ripple's imperative api like `simulatedRipple` will
+         * still generate the ripple effect.
+         */
+        noink: {
+          type: Boolean,
+          value: false
+        },
+
+        _animating: {
+          type: Boolean
+        },
+
+        _boundAnimate: {
+          type: Function,
+          value: function() {
+            return this.animate.bind(this);
+          }
+        }
+      },
+
+      get target () {
+        return this.keyEventTarget;
+      },
+
+      keyBindings: {
+        'enter:keydown': '_onEnterKeydown',
+        'space:keydown': '_onSpaceKeydown',
+        'space:keyup': '_onSpaceKeyup'
+      },
+
+      attached: function() {
+        // Set up a11yKeysBehavior to listen to key events on the target,
+        // so that space and enter activate the ripple even if the target doesn't
+        // handle key events. The key handlers deal with `noink` themselves.
+        if (this.parentNode.nodeType == 11) { // DOCUMENT_FRAGMENT_NODE
+          this.keyEventTarget = Polymer.dom(this).getOwnerRoot().host;
+        } else {
+          this.keyEventTarget = this.parentNode;
+        }
+        var keyEventTarget = /** @type {!EventTarget} */ (this.keyEventTarget);
+        this.listen(keyEventTarget, 'up', 'uiUpAction');
+        this.listen(keyEventTarget, 'down', 'uiDownAction');
+      },
+
+      detached: function() {
+        this.unlisten(this.keyEventTarget, 'up', 'uiUpAction');
+        this.unlisten(this.keyEventTarget, 'down', 'uiDownAction');
+        this.keyEventTarget = null;
+      },
+
+      get shouldKeepAnimating () {
+        for (var index = 0; index < this.ripples.length; ++index) {
+          if (!this.ripples[index].isAnimationComplete) {
+            return true;
+          }
+        }
+
+        return false;
+      },
+
+      simulatedRipple: function() {
+        this.downAction(null);
+
+        // Please see polymer/polymer#1305
+        this.async(function() {
+          this.upAction();
+        }, 1);
+      },
+
+      /**
+       * Provokes a ripple down effect via a UI event,
+       * respecting the `noink` property.
+       * @param {Event=} event
+       */
+      uiDownAction: function(event) {
+        if (!this.noink) {
+          this.downAction(event);
+        }
+      },
+
+      /**
+       * Provokes a ripple down effect via a UI event,
+       * *not* respecting the `noink` property.
+       * @param {Event=} event
+       */
+      downAction: function(event) {
+        if (this.holdDown && this.ripples.length > 0) {
+          return;
+        }
+
+        var ripple = this.addRipple();
+
+        ripple.downAction(event);
+
+        if (!this._animating) {
+          this._animating = true;
+          this.animate();
+        }
+      },
+
+      /**
+       * Provokes a ripple up effect via a UI event,
+       * respecting the `noink` property.
+       * @param {Event=} event
+       */
+      uiUpAction: function(event) {
+        if (!this.noink) {
+          this.upAction(event);
+        }
+      },
+
+      /**
+       * Provokes a ripple up effect via a UI event,
+       * *not* respecting the `noink` property.
+       * @param {Event=} event
+       */
+      upAction: function(event) {
+        if (this.holdDown) {
+          return;
+        }
+
+        this.ripples.forEach(function(ripple) {
+          ripple.upAction(event);
+        });
+
+        this._animating = true;
+        this.animate();
+      },
+
+      onAnimationComplete: function() {
+        this._animating = false;
+        this.$.background.style.backgroundColor = null;
+        this.fire('transitionend');
+      },
+
+      addRipple: function() {
+        var ripple = new Ripple(this);
+
+        Polymer.dom(this.$.waves).appendChild(ripple.waveContainer);
+        this.$.background.style.backgroundColor = ripple.color;
+        this.ripples.push(ripple);
+
+        this._setAnimating(true);
+
+        return ripple;
+      },
+
+      removeRipple: function(ripple) {
+        var rippleIndex = this.ripples.indexOf(ripple);
+
+        if (rippleIndex < 0) {
+          return;
+        }
+
+        this.ripples.splice(rippleIndex, 1);
+
+        ripple.remove();
+
+        if (!this.ripples.length) {
+          this._setAnimating(false);
+        }
+      },
+
+      animate: function() {
+        if (!this._animating) {
+          return;
+        }
+        var index;
+        var ripple;
+
+        for (index = 0; index < this.ripples.length; ++index) {
+          ripple = this.ripples[index];
+
+          ripple.draw();
+
+          this.$.background.style.opacity = ripple.outerOpacity;
+
+          if (ripple.isOpacityFullyDecayed && !ripple.isRestingAtMaxRadius) {
+            this.removeRipple(ripple);
+          }
+        }
+
+        if (!this.shouldKeepAnimating && this.ripples.length === 0) {
+          this.onAnimationComplete();
+        } else {
+          window.requestAnimationFrame(this._boundAnimate);
+        }
+      },
+
+      _onEnterKeydown: function() {
+        this.uiDownAction();
+        this.async(this.uiUpAction, 1);
+      },
+
+      _onSpaceKeydown: function() {
+        this.uiDownAction();
+      },
+
+      _onSpaceKeyup: function() {
+        this.uiUpAction();
+      },
+
+      // note: holdDown does not respect noink since it can be a focus based
+      // effect.
+      _holdDownChanged: function(newVal, oldVal) {
+        if (oldVal === undefined) {
+          return;
+        }
+        if (newVal) {
+          this.downAction();
+        } else {
+          this.upAction();
+        }
+      }
+
+      /**
+      Fired when the animation finishes.
+      This is useful if you want to wait until
+      the ripple animation finishes to perform some action.
+
+      @event transitionend
+      @param {{node: Object}} detail Contains the animated node.
+      */
+    });
+  })();
+/**
+   * `Polymer.PaperRippleBehavior` dynamically implements a ripple
+   * when the element has focus via pointer or keyboard.
+   *
+   * NOTE: This behavior is intended to be used in conjunction with and after
+   * `Polymer.IronButtonState` and `Polymer.IronControlState`.
+   *
+   * @polymerBehavior Polymer.PaperRippleBehavior
+   */
+  Polymer.PaperRippleBehavior = {
+    properties: {
+      /**
+       * If true, the element will not produce a ripple effect when interacted
+       * with via the pointer.
+       */
+      noink: {
+        type: Boolean,
+        observer: '_noinkChanged'
+      },
+
+      /**
+       * @type {Element|undefined}
+       */
+      _rippleContainer: {
+        type: Object,
+      }
+    },
+
+    /**
+     * Ensures a `<paper-ripple>` element is available when the element is
+     * focused.
+     */
+    _buttonStateChanged: function() {
+      if (this.focused) {
+        this.ensureRipple();
+      }
+    },
+
+    /**
+     * In addition to the functionality provided in `IronButtonState`, ensures
+     * a ripple effect is created when the element is in a `pressed` state.
+     */
+    _downHandler: function(event) {
+      Polymer.IronButtonStateImpl._downHandler.call(this, event);
+      if (this.pressed) {
+        this.ensureRipple(event);
+      }
+    },
+
+    /**
+     * Ensures this element contains a ripple effect. For startup efficiency
+     * the ripple effect is dynamically on demand when needed.
+     * @param {!Event=} optTriggeringEvent (optional) event that triggered the
+     * ripple.
+     */
+    ensureRipple: function(optTriggeringEvent) {
+      if (!this.hasRipple()) {
+        this._ripple = this._createRipple();
+        this._ripple.noink = this.noink;
+        var rippleContainer = this._rippleContainer || this.root;
+        if (rippleContainer) {
+          Polymer.dom(rippleContainer).appendChild(this._ripple);
+        }
+        if (optTriggeringEvent) {
+          // Check if the event happened inside of the ripple container
+          // Fall back to host instead of the root because distributed text
+          // nodes are not valid event targets
+          var domContainer = Polymer.dom(this._rippleContainer || this);
+          var target = Polymer.dom(optTriggeringEvent).rootTarget;
+          if (domContainer.deepContains( /** @type {Node} */(target))) {
+            this._ripple.uiDownAction(optTriggeringEvent);
+          }
+        }
+      }
+    },
+
+    /**
+     * Returns the `<paper-ripple>` element used by this element to create
+     * ripple effects. The element's ripple is created on demand, when
+     * necessary, and calling this method will force the
+     * ripple to be created.
+     */
+    getRipple: function() {
+      this.ensureRipple();
+      return this._ripple;
+    },
+
+    /**
+     * Returns true if this element currently contains a ripple effect.
+     * @return {boolean}
+     */
+    hasRipple: function() {
+      return Boolean(this._ripple);
+    },
+
+    /**
+     * Create the element's ripple effect via creating a `<paper-ripple>`.
+     * Override this method to customize the ripple element.
+     * @return {!PaperRippleElement} Returns a `<paper-ripple>` element.
+     */
+    _createRipple: function() {
+      return /** @type {!PaperRippleElement} */ (
+          document.createElement('paper-ripple'));
+    },
+
+    _noinkChanged: function(noink) {
+      if (this.hasRipple()) {
+        this._ripple.noink = noink;
+      }
+    }
+  };
+/** @polymerBehavior Polymer.PaperButtonBehavior */
+  Polymer.PaperButtonBehaviorImpl = {
+    properties: {
+      /**
+       * The z-depth of this element, from 0-5. Setting to 0 will remove the
+       * shadow, and each increasing number greater than 0 will be "deeper"
+       * than the last.
+       *
+       * @attribute elevation
+       * @type number
+       * @default 1
+       */
+      elevation: {
+        type: Number,
+        reflectToAttribute: true,
+        readOnly: true
+      }
+    },
+
+    observers: [
+      '_calculateElevation(focused, disabled, active, pressed, receivedFocusFromKeyboard)',
+      '_computeKeyboardClass(receivedFocusFromKeyboard)'
+    ],
+
+    hostAttributes: {
+      role: 'button',
+      tabindex: '0',
+      animated: true
+    },
+
+    _calculateElevation: function() {
+      var e = 1;
+      if (this.disabled) {
+        e = 0;
+      } else if (this.active || this.pressed) {
+        e = 4;
+      } else if (this.receivedFocusFromKeyboard) {
+        e = 3;
+      }
+      this._setElevation(e);
+    },
+
+    _computeKeyboardClass: function(receivedFocusFromKeyboard) {
+      this.toggleClass('keyboard-focus', receivedFocusFromKeyboard);
+    },
+
+    /**
+     * In addition to `IronButtonState` behavior, when space key goes down,
+     * create a ripple down effect.
+     *
+     * @param {!KeyboardEvent} event .
+     */
+    _spaceKeyDownHandler: function(event) {
+      Polymer.IronButtonStateImpl._spaceKeyDownHandler.call(this, event);
+      // Ensure that there is at most one ripple when the space key is held down.
+      if (this.hasRipple() && this.getRipple().ripples.length < 1) {
+        this._ripple.uiDownAction();
+      }
+    },
+
+    /**
+     * In addition to `IronButtonState` behavior, when space key goes up,
+     * create a ripple up effect.
+     *
+     * @param {!KeyboardEvent} event .
+     */
+    _spaceKeyUpHandler: function(event) {
+      Polymer.IronButtonStateImpl._spaceKeyUpHandler.call(this, event);
+      if (this.hasRipple()) {
+        this._ripple.uiUpAction();
+      }
+    }
+  };
+
+  /** @polymerBehavior */
+  Polymer.PaperButtonBehavior = [
+    Polymer.IronButtonState,
+    Polymer.IronControlState,
+    Polymer.PaperRippleBehavior,
+    Polymer.PaperButtonBehaviorImpl
+  ];
+Polymer({
+      is: 'paper-fab',
+
+      behaviors: [
+        Polymer.PaperButtonBehavior
+      ],
+
+      properties: {
+        /**
+         * The URL of an image for the icon. If the src property is specified,
+         * the icon property should not be.
+         */
+        src: {
+          type: String,
+          value: ''
+        },
+
+        /**
+         * Specifies the icon name or index in the set of icons available in
+         * the icon's icon set. If the icon property is specified,
+         * the src property should not be.
+         */
+        icon: {
+          type: String,
+          value: ''
+        },
+
+        /**
+         * Set this to true to style this is a "mini" FAB.
+         */
+        mini: {
+          type: Boolean,
+          value: false,
+          reflectToAttribute: true
+        },
+
+        /**
+         * The label displayed in the badge. The label is centered, and ideally
+         * should have very few characters.
+         */
+        label: {
+          type: String,
+          observer: '_labelChanged'
+        }
+      },
+
+      _labelChanged: function() {
+        this.setAttribute('aria-label', this.label);
+      },
+
+      _computeIsIconFab: function(icon, src) {
+        return (icon.length > 0) || (src.length > 0);
+      }
+    });
+/**
+   * `Polymer.NeonAnimatableBehavior` is implemented by elements containing animations for use with
+   * elements implementing `Polymer.NeonAnimationRunnerBehavior`.
+   * @polymerBehavior
+   */
+  Polymer.NeonAnimatableBehavior = {
+
+    properties: {
+
+      /**
+       * Animation configuration. See README for more info.
+       */
+      animationConfig: {
+        type: Object
+      },
+
+      /**
+       * Convenience property for setting an 'entry' animation. Do not set `animationConfig.entry`
+       * manually if using this. The animated node is set to `this` if using this property.
+       */
+      entryAnimation: {
+        observer: '_entryAnimationChanged',
+        type: String
+      },
+
+      /**
+       * Convenience property for setting an 'exit' animation. Do not set `animationConfig.exit`
+       * manually if using this. The animated node is set to `this` if using this property.
+       */
+      exitAnimation: {
+        observer: '_exitAnimationChanged',
+        type: String
+      }
+
+    },
+
+    _entryAnimationChanged: function() {
+      this.animationConfig = this.animationConfig || {};
+      this.animationConfig['entry'] = [{
+        name: this.entryAnimation,
+        node: this
+      }];
+    },
+
+    _exitAnimationChanged: function() {
+      this.animationConfig = this.animationConfig || {};
+      this.animationConfig['exit'] = [{
+        name: this.exitAnimation,
+        node: this
+      }];
+    },
+
+    _copyProperties: function(config1, config2) {
+      // shallowly copy properties from config2 to config1
+      for (var property in config2) {
+        config1[property] = config2[property];
+      }
+    },
+
+    _cloneConfig: function(config) {
+      var clone = {
+        isClone: true
+      };
+      this._copyProperties(clone, config);
+      return clone;
+    },
+
+    _getAnimationConfigRecursive: function(type, map, allConfigs) {
+      if (!this.animationConfig) {
+        return;
+      }
+
+      if(this.animationConfig.value && typeof this.animationConfig.value === 'function') {
+      	this._warn(this._logf('playAnimation', "Please put 'animationConfig' inside of your components 'properties' object instead of outside of it."));
+      	return;
+      }
+
+      // type is optional
+      var thisConfig;
+      if (type) {
+        thisConfig = this.animationConfig[type];
+      } else {
+        thisConfig = this.animationConfig;
+      }
+
+      if (!Array.isArray(thisConfig)) {
+        thisConfig = [thisConfig];
+      }
+
+      // iterate animations and recurse to process configurations from child nodes
+      if (thisConfig) {
+        for (var config, index = 0; config = thisConfig[index]; index++) {
+          if (config.animatable) {
+            config.animatable._getAnimationConfigRecursive(config.type || type, map, allConfigs);
+          } else {
+            if (config.id) {
+              var cachedConfig = map[config.id];
+              if (cachedConfig) {
+                // merge configurations with the same id, making a clone lazily
+                if (!cachedConfig.isClone) {
+                  map[config.id] = this._cloneConfig(cachedConfig)
+                  cachedConfig = map[config.id];
+                }
+                this._copyProperties(cachedConfig, config);
+              } else {
+                // put any configs with an id into a map
+                map[config.id] = config;
+              }
+            } else {
+              allConfigs.push(config);
+            }
+          }
+        }
+      }
+    },
+
+    /**
+     * An element implementing `Polymer.NeonAnimationRunnerBehavior` calls this method to configure
+     * an animation with an optional type. Elements implementing `Polymer.NeonAnimatableBehavior`
+     * should define the property `animationConfig`, which is either a configuration object
+     * or a map of animation type to array of configuration objects.
+     */
+    getAnimationConfig: function(type) {
+      var map = {};
+      var allConfigs = [];
+      this._getAnimationConfigRecursive(type, map, allConfigs);
+      // append the configurations saved in the map to the array
+      for (var key in map) {
+        allConfigs.push(map[key]);
+      }
+      return allConfigs;
+    }
+
+  };
+/**
+   * `Polymer.NeonAnimationRunnerBehavior` adds a method to run animations.
+   *
+   * @polymerBehavior Polymer.NeonAnimationRunnerBehavior
+   */
+  Polymer.NeonAnimationRunnerBehaviorImpl = {
+
+    _configureAnimations: function(configs) {
+      var results = [];
+      if (configs.length > 0) {
+        for (var config, index = 0; config = configs[index]; index++) {
+          var neonAnimation = document.createElement(config.name);
+          // is this element actually a neon animation?
+          if (neonAnimation.isNeonAnimation) {
+            var result = null;
+            // configuration or play could fail if polyfills aren't loaded
+            try {
+              result = neonAnimation.configure(config);
+              // Check if we have an Effect rather than an Animation
+              if (typeof result.cancel != 'function') { 
+                result = document.timeline.play(result);
+              }
+            } catch (e) {
+              result = null;
+              console.warn('Couldnt play', '(', config.name, ').', e);
+            }
+            if (result) {
+              results.push({
+                neonAnimation: neonAnimation,
+                config: config,
+                animation: result,
+              });
+            }
+          } else {
+            console.warn(this.is + ':', config.name, 'not found!');
+          }
+        }
+      }
+      return results;
+    },
+
+    _shouldComplete: function(activeEntries) {
+      var finished = true;
+      for (var i = 0; i < activeEntries.length; i++) {
+        if (activeEntries[i].animation.playState != 'finished') {
+          finished = false;
+          break;
+        }
+      }
+      return finished;
+    },
+
+    _complete: function(activeEntries) {
+      for (var i = 0; i < activeEntries.length; i++) {
+        activeEntries[i].neonAnimation.complete(activeEntries[i].config);
+      }
+      for (var i = 0; i < activeEntries.length; i++) {
+        activeEntries[i].animation.cancel();
+      }
+    },
+
+    /**
+     * Plays an animation with an optional `type`.
+     * @param {string=} type
+     * @param {!Object=} cookie
+     */
+    playAnimation: function(type, cookie) {
+      var configs = this.getAnimationConfig(type);
+      if (!configs) {
+        return;
+      }
+      this._active = this._active || {};
+      if (this._active[type]) {
+        this._complete(this._active[type]);
+        delete this._active[type];
+      }
+
+      var activeEntries = this._configureAnimations(configs);
+
+      if (activeEntries.length == 0) {
+        this.fire('neon-animation-finish', cookie, {bubbles: false});
+        return;
+      }
+
+      this._active[type] = activeEntries;
+
+      for (var i = 0; i < activeEntries.length; i++) {
+        activeEntries[i].animation.onfinish = function() {
+          if (this._shouldComplete(activeEntries)) {
+            this._complete(activeEntries);
+            delete this._active[type];
+            this.fire('neon-animation-finish', cookie, {bubbles: false});
+          }
+        }.bind(this);
+      }
+    },
+
+    /**
+     * Cancels the currently running animations.
+     */
+    cancelAnimation: function() {
+      for (var k in this._animations) {
+        this._animations[k].cancel();
+      }
+      this._animations = {};
+    }
+  };
+
+  /** @polymerBehavior Polymer.NeonAnimationRunnerBehavior */
+  Polymer.NeonAnimationRunnerBehavior = [
+    Polymer.NeonAnimatableBehavior,
+    Polymer.NeonAnimationRunnerBehaviorImpl
+  ];
+/**
+Use `Polymer.PaperDialogBehavior` and `paper-dialog-shared-styles.html` to implement a Material Design
+dialog.
+
+For example, if `<paper-dialog-impl>` implements this behavior:
+
+    <paper-dialog-impl>
+        <h2>Header</h2>
+        <div>Dialog body</div>
+        <div class="buttons">
+            <paper-button dialog-dismiss>Cancel</paper-button>
+            <paper-button dialog-confirm>Accept</paper-button>
+        </div>
+    </paper-dialog-impl>
+
+`paper-dialog-shared-styles.html` provide styles for a header, content area, and an action area for buttons.
+Use the `<h2>` tag for the header and the `buttons` class for the action area. You can use the
+`paper-dialog-scrollable` element (in its own repository) if you need a scrolling content area.
+
+Use the `dialog-dismiss` and `dialog-confirm` attributes on interactive controls to close the
+dialog. If the user dismisses the dialog with `dialog-confirm`, the `closingReason` will update
+to include `confirmed: true`.
+
+### Accessibility
+
+This element has `role="dialog"` by default. Depending on the context, it may be more appropriate
+to override this attribute with `role="alertdialog"`.
+
+If `modal` is set, the element will prevent the focus from exiting the element.
+It will also ensure that focus remains in the dialog.
+
+@hero hero.svg
+@demo demo/index.html
+@polymerBehavior Polymer.PaperDialogBehavior
+*/
+
+  Polymer.PaperDialogBehaviorImpl = {
+
+    hostAttributes: {
+      'role': 'dialog',
+      'tabindex': '-1'
+    },
+
+    properties: {
+
+      /**
+       * If `modal` is true, this implies `no-cancel-on-outside-click`, `no-cancel-on-esc-key` and `with-backdrop`.
+       */
+      modal: {
+        type: Boolean,
+        value: false
+      }
+
+    },
+
+    observers: [
+      '_modalChanged(modal, _readied)'
+    ],
+
+    listeners: {
+      'tap': '_onDialogClick'
+    },
+
+    ready: function () {
+      // Only now these properties can be read.
+      this.__prevNoCancelOnOutsideClick = this.noCancelOnOutsideClick;
+      this.__prevNoCancelOnEscKey = this.noCancelOnEscKey;
+      this.__prevWithBackdrop = this.withBackdrop;
+    },
+
+    _modalChanged: function(modal, readied) {
+      // modal implies noCancelOnOutsideClick, noCancelOnEscKey and withBackdrop.
+      // We need to wait for the element to be ready before we can read the
+      // properties values.
+      if (!readied) {
+        return;
+      }
+
+      if (modal) {
+        this.__prevNoCancelOnOutsideClick = this.noCancelOnOutsideClick;
+        this.__prevNoCancelOnEscKey = this.noCancelOnEscKey;
+        this.__prevWithBackdrop = this.withBackdrop;
+        this.noCancelOnOutsideClick = true;
+        this.noCancelOnEscKey = true;
+        this.withBackdrop = true;
+      } else {
+        // If the value was changed to false, let it false.
+        this.noCancelOnOutsideClick = this.noCancelOnOutsideClick &&
+          this.__prevNoCancelOnOutsideClick;
+        this.noCancelOnEscKey = this.noCancelOnEscKey &&
+          this.__prevNoCancelOnEscKey;
+        this.withBackdrop = this.withBackdrop && this.__prevWithBackdrop;
+      }
+    },
+
+    _updateClosingReasonConfirmed: function(confirmed) {
+      this.closingReason = this.closingReason || {};
+      this.closingReason.confirmed = confirmed;
+    },
+
+    /**
+     * Will dismiss the dialog if user clicked on an element with dialog-dismiss
+     * or dialog-confirm attribute.
+     */
+    _onDialogClick: function(event) {
+      // Search for the element with dialog-confirm or dialog-dismiss,
+      // from the root target until this (excluded).
+      var path = Polymer.dom(event).path;
+      for (var i = 0; i < path.indexOf(this); i++) {
+        var target = path[i];
+        if (target.hasAttribute && (target.hasAttribute('dialog-dismiss') || target.hasAttribute('dialog-confirm'))) {
+          this._updateClosingReasonConfirmed(target.hasAttribute('dialog-confirm'));
+          this.close();
+          event.stopPropagation();
+          break;
+        }
+      }
+    }
+
+  };
+
+  /** @polymerBehavior */
+  Polymer.PaperDialogBehavior = [Polymer.IronOverlayBehavior, Polymer.PaperDialogBehaviorImpl];
+(function() {
+
+  Polymer({
+
+    is: 'paper-dialog',
+
+    behaviors: [
+      Polymer.PaperDialogBehavior,
+      Polymer.NeonAnimationRunnerBehavior
+    ],
+
+    listeners: {
+      'neon-animation-finish': '_onNeonAnimationFinish'
+    },
+
+    _renderOpened: function() {
+      this.cancelAnimation();
+      this.playAnimation('entry');
+    },
+
+    _renderClosed: function() {
+      this.cancelAnimation();
+      this.playAnimation('exit');
+    },
+
+    _onNeonAnimationFinish: function() {
+      if (this.opened) {
+        this._finishRenderOpened();
+      } else {
+        this._finishRenderClosed();
+      }
+    }
+
+  });
+
+})();
+/**
+   * @param {!Function} selectCallback
+   * @constructor
+   */
+  Polymer.IronSelection = function(selectCallback) {
+    this.selection = [];
+    this.selectCallback = selectCallback;
+  };
+
+  Polymer.IronSelection.prototype = {
+
+    /**
+     * Retrieves the selected item(s).
+     *
+     * @method get
+     * @returns Returns the selected item(s). If the multi property is true,
+     * `get` will return an array, otherwise it will return
+     * the selected item or undefined if there is no selection.
+     */
+    get: function() {
+      return this.multi ? this.selection.slice() : this.selection[0];
+    },
+
+    /**
+     * Clears all the selection except the ones indicated.
+     *
+     * @method clear
+     * @param {Array} excludes items to be excluded.
+     */
+    clear: function(excludes) {
+      this.selection.slice().forEach(function(item) {
+        if (!excludes || excludes.indexOf(item) < 0) {
+          this.setItemSelected(item, false);
+        }
+      }, this);
+    },
+
+    /**
+     * Indicates if a given item is selected.
+     *
+     * @method isSelected
+     * @param {*} item The item whose selection state should be checked.
+     * @returns Returns true if `item` is selected.
+     */
+    isSelected: function(item) {
+      return this.selection.indexOf(item) >= 0;
+    },
+
+    /**
+     * Sets the selection state for a given item to either selected or deselected.
+     *
+     * @method setItemSelected
+     * @param {*} item The item to select.
+     * @param {boolean} isSelected True for selected, false for deselected.
+     */
+    setItemSelected: function(item, isSelected) {
+      if (item != null) {
+        if (isSelected !== this.isSelected(item)) {
+          // proceed to update selection only if requested state differs from current
+          if (isSelected) {
+            this.selection.push(item);
+          } else {
+            var i = this.selection.indexOf(item);
+            if (i >= 0) {
+              this.selection.splice(i, 1);
+            }
+          }
+          if (this.selectCallback) {
+            this.selectCallback(item, isSelected);
+          }
+        }
+      }
+    },
+
+    /**
+     * Sets the selection state for a given item. If the `multi` property
+     * is true, then the selected state of `item` will be toggled; otherwise
+     * the `item` will be selected.
+     *
+     * @method select
+     * @param {*} item The item to select.
+     */
+    select: function(item) {
+      if (this.multi) {
+        this.toggle(item);
+      } else if (this.get() !== item) {
+        this.setItemSelected(this.get(), false);
+        this.setItemSelected(item, true);
+      }
+    },
+
+    /**
+     * Toggles the selection state for `item`.
+     *
+     * @method toggle
+     * @param {*} item The item to toggle.
+     */
+    toggle: function(item) {
+      this.setItemSelected(item, !this.isSelected(item));
+    }
+
+  };
+/** @polymerBehavior */
+  Polymer.IronSelectableBehavior = {
+
+      /**
+       * Fired when iron-selector is activated (selected or deselected).
+       * It is fired before the selected items are changed.
+       * Cancel the event to abort selection.
+       *
+       * @event iron-activate
+       */
+
+      /**
+       * Fired when an item is selected
+       *
+       * @event iron-select
+       */
+
+      /**
+       * Fired when an item is deselected
+       *
+       * @event iron-deselect
+       */
+
+      /**
+       * Fired when the list of selectable items changes (e.g., items are
+       * added or removed). The detail of the event is a mutation record that
+       * describes what changed.
+       *
+       * @event iron-items-changed
+       */
+
+    properties: {
+
+      /**
+       * If you want to use an attribute value or property of an element for
+       * `selected` instead of the index, set this to the name of the attribute
+       * or property. Hyphenated values are converted to camel case when used to
+       * look up the property of a selectable element. Camel cased values are
+       * *not* converted to hyphenated values for attribute lookup. It's
+       * recommended that you provide the hyphenated form of the name so that
+       * selection works in both cases. (Use `attr-or-property-name` instead of
+       * `attrOrPropertyName`.)
+       */
+      attrForSelected: {
+        type: String,
+        value: null
+      },
+
+      /**
+       * Gets or sets the selected element. The default is to use the index of the item.
+       * @type {string|number}
+       */
+      selected: {
+        type: String,
+        notify: true
+      },
+
+      /**
+       * Returns the currently selected item.
+       *
+       * @type {?Object}
+       */
+      selectedItem: {
+        type: Object,
+        readOnly: true,
+        notify: true
+      },
+
+      /**
+       * The event that fires from items when they are selected. Selectable
+       * will listen for this event from items and update the selection state.
+       * Set to empty string to listen to no events.
+       */
+      activateEvent: {
+        type: String,
+        value: 'tap',
+        observer: '_activateEventChanged'
+      },
+
+      /**
+       * This is a CSS selector string.  If this is set, only items that match the CSS selector
+       * are selectable.
+       */
+      selectable: String,
+
+      /**
+       * The class to set on elements when selected.
+       */
+      selectedClass: {
+        type: String,
+        value: 'iron-selected'
+      },
+
+      /**
+       * The attribute to set on elements when selected.
+       */
+      selectedAttribute: {
+        type: String,
+        value: null
+      },
+
+      /**
+       * Default fallback if the selection based on selected with `attrForSelected`
+       * is not found.
+       */
+      fallbackSelection: {
+        type: String,
+        value: null
+      },
+
+      /**
+       * The list of items from which a selection can be made.
+       */
+      items: {
+        type: Array,
+        readOnly: true,
+        notify: true,
+        value: function() {
+          return [];
+        }
+      },
+
+      /**
+       * The set of excluded elements where the key is the `localName`
+       * of the element that will be ignored from the item list.
+       *
+       * @default {template: 1}
+       */
+      _excludedLocalNames: {
+        type: Object,
+        value: function() {
+          return {
+            'template': 1
+          };
+        }
+      }
+    },
+
+    observers: [
+      '_updateAttrForSelected(attrForSelected)',
+      '_updateSelected(selected)',
+      '_checkFallback(fallbackSelection)'
+    ],
+
+    created: function() {
+      this._bindFilterItem = this._filterItem.bind(this);
+      this._selection = new Polymer.IronSelection(this._applySelection.bind(this));
+    },
+
+    attached: function() {
+      this._observer = this._observeItems(this);
+      this._updateItems();
+      if (!this._shouldUpdateSelection) {
+        this._updateSelected();
+      }
+      this._addListener(this.activateEvent);
+    },
+
+    detached: function() {
+      if (this._observer) {
+        Polymer.dom(this).unobserveNodes(this._observer);
+      }
+      this._removeListener(this.activateEvent);
+    },
+
+    /**
+     * Returns the index of the given item.
+     *
+     * @method indexOf
+     * @param {Object} item
+     * @returns Returns the index of the item
+     */
+    indexOf: function(item) {
+      return this.items.indexOf(item);
+    },
+
+    /**
+     * Selects the given value.
+     *
+     * @method select
+     * @param {string|number} value the value to select.
+     */
+    select: function(value) {
+      this.selected = value;
+    },
+
+    /**
+     * Selects the previous item.
+     *
+     * @method selectPrevious
+     */
+    selectPrevious: function() {
+      var length = this.items.length;
+      var index = (Number(this._valueToIndex(this.selected)) - 1 + length) % length;
+      this.selected = this._indexToValue(index);
+    },
+
+    /**
+     * Selects the next item.
+     *
+     * @method selectNext
+     */
+    selectNext: function() {
+      var index = (Number(this._valueToIndex(this.selected)) + 1) % this.items.length;
+      this.selected = this._indexToValue(index);
+    },
+
+    /**
+     * Selects the item at the given index.
+     *
+     * @method selectIndex
+     */
+    selectIndex: function(index) {
+      this.select(this._indexToValue(index));
+    },
+
+    /**
+     * Force a synchronous update of the `items` property.
+     *
+     * NOTE: Consider listening for the `iron-items-changed` event to respond to
+     * updates to the set of selectable items after updates to the DOM list and
+     * selection state have been made.
+     *
+     * WARNING: If you are using this method, you should probably consider an
+     * alternate approach. Synchronously querying for items is potentially
+     * slow for many use cases. The `items` property will update asynchronously
+     * on its own to reflect selectable items in the DOM.
+     */
+    forceSynchronousItemUpdate: function() {
+      this._updateItems();
+    },
+
+    get _shouldUpdateSelection() {
+      return this.selected != null;
+    },
+
+    _checkFallback: function() {
+      if (this._shouldUpdateSelection) {
+        this._updateSelected();
+      }
+    },
+
+    _addListener: function(eventName) {
+      this.listen(this, eventName, '_activateHandler');
+    },
+
+    _removeListener: function(eventName) {
+      this.unlisten(this, eventName, '_activateHandler');
+    },
+
+    _activateEventChanged: function(eventName, old) {
+      this._removeListener(old);
+      this._addListener(eventName);
+    },
+
+    _updateItems: function() {
+      var nodes = Polymer.dom(this).queryDistributedElements(this.selectable || '*');
+      nodes = Array.prototype.filter.call(nodes, this._bindFilterItem);
+      this._setItems(nodes);
+    },
+
+    _updateAttrForSelected: function() {
+      if (this._shouldUpdateSelection) {
+        this.selected = this._indexToValue(this.indexOf(this.selectedItem));
+      }
+    },
+
+    _updateSelected: function() {
+      this._selectSelected(this.selected);
+    },
+
+    _selectSelected: function(selected) {
+      this._selection.select(this._valueToItem(this.selected));
+      // Check for items, since this array is populated only when attached
+      // Since Number(0) is falsy, explicitly check for undefined
+      if (this.fallbackSelection && this.items.length && (this._selection.get() === undefined)) {
+        this.selected = this.fallbackSelection;
+      }
+    },
+
+    _filterItem: function(node) {
+      return !this._excludedLocalNames[node.localName];
+    },
+
+    _valueToItem: function(value) {
+      return (value == null) ? null : this.items[this._valueToIndex(value)];
+    },
+
+    _valueToIndex: function(value) {
+      if (this.attrForSelected) {
+        for (var i = 0, item; item = this.items[i]; i++) {
+          if (this._valueForItem(item) == value) {
+            return i;
+          }
+        }
+      } else {
+        return Number(value);
+      }
+    },
+
+    _indexToValue: function(index) {
+      if (this.attrForSelected) {
+        var item = this.items[index];
+        if (item) {
+          return this._valueForItem(item);
+        }
+      } else {
+        return index;
+      }
+    },
+
+    _valueForItem: function(item) {
+      var propValue = item[Polymer.CaseMap.dashToCamelCase(this.attrForSelected)];
+      return propValue != undefined ? propValue : item.getAttribute(this.attrForSelected);
+    },
+
+    _applySelection: function(item, isSelected) {
+      if (this.selectedClass) {
+        this.toggleClass(this.selectedClass, isSelected, item);
+      }
+      if (this.selectedAttribute) {
+        this.toggleAttribute(this.selectedAttribute, isSelected, item);
+      }
+      this._selectionChange();
+      this.fire('iron-' + (isSelected ? 'select' : 'deselect'), {item: item});
+    },
+
+    _selectionChange: function() {
+      this._setSelectedItem(this._selection.get());
+    },
+
+    // observe items change under the given node.
+    _observeItems: function(node) {
+      return Polymer.dom(node).observeNodes(function(mutation) {
+        this._updateItems();
+
+        if (this._shouldUpdateSelection) {
+          this._updateSelected();
+        }
+
+        // Let other interested parties know about the change so that
+        // we don't have to recreate mutation observers everywhere.
+        this.fire('iron-items-changed', mutation, {
+          bubbles: false,
+          cancelable: false
+        });
+      });
+    },
+
+    _activateHandler: function(e) {
+      var t = e.target;
+      var items = this.items;
+      while (t && t != this) {
+        var i = items.indexOf(t);
+        if (i >= 0) {
+          var value = this._indexToValue(i);
+          this._itemActivate(value, t);
+          return;
+        }
+        t = t.parentNode;
+      }
+    },
+
+    _itemActivate: function(value, item) {
+      if (!this.fire('iron-activate',
+          {selected: value, item: item}, {cancelable: true}).defaultPrevented) {
+        this.select(value);
+      }
+    }
+
+  };
+/** @polymerBehavior Polymer.IronMultiSelectableBehavior */
+  Polymer.IronMultiSelectableBehaviorImpl = {
+    properties: {
+
+      /**
+       * If true, multiple selections are allowed.
+       */
+      multi: {
+        type: Boolean,
+        value: false,
+        observer: 'multiChanged'
+      },
+
+      /**
+       * Gets or sets the selected elements. This is used instead of `selected` when `multi`
+       * is true.
+       */
+      selectedValues: {
+        type: Array,
+        notify: true
+      },
+
+      /**
+       * Returns an array of currently selected items.
+       */
+      selectedItems: {
+        type: Array,
+        readOnly: true,
+        notify: true
+      },
+
+    },
+
+    observers: [
+      '_updateSelected(selectedValues.splices)'
+    ],
+
+    /**
+     * Selects the given value. If the `multi` property is true, then the selected state of the
+     * `value` will be toggled; otherwise the `value` will be selected.
+     *
+     * @method select
+     * @param {string|number} value the value to select.
+     */
+    select: function(value) {
+      if (this.multi) {
+        if (this.selectedValues) {
+          this._toggleSelected(value);
+        } else {
+          this.selectedValues = [value];
+        }
+      } else {
+        this.selected = value;
+      }
+    },
+
+    multiChanged: function(multi) {
+      this._selection.multi = multi;
+    },
+
+    get _shouldUpdateSelection() {
+      return this.selected != null ||
+        (this.selectedValues != null && this.selectedValues.length);
+    },
+
+    _updateAttrForSelected: function() {
+      if (!this.multi) {
+        Polymer.IronSelectableBehavior._updateAttrForSelected.apply(this);
+      } else if (this._shouldUpdateSelection) {
+        this.selectedValues = this.selectedItems.map(function(selectedItem) {
+          return this._indexToValue(this.indexOf(selectedItem));
+        }, this).filter(function(unfilteredValue) {
+          return unfilteredValue != null;
+        }, this);
+      }
+    },
+
+    _updateSelected: function() {
+      if (this.multi) {
+        this._selectMulti(this.selectedValues);
+      } else {
+        this._selectSelected(this.selected);
+      }
+    },
+
+    _selectMulti: function(values) {
+      if (values) {
+        var selectedItems = this._valuesToItems(values);
+        // clear all but the current selected items
+        this._selection.clear(selectedItems);
+        // select only those not selected yet
+        for (var i = 0; i < selectedItems.length; i++) {
+          this._selection.setItemSelected(selectedItems[i], true);
+        }
+        // Check for items, since this array is populated only when attached
+        if (this.fallbackSelection && this.items.length && !this._selection.get().length) {
+          var fallback = this._valueToItem(this.fallbackSelection);
+          if (fallback) {
+            this.selectedValues = [this.fallbackSelection];
+          }
+        }
+      } else {
+        this._selection.clear();
+      }
+    },
+
+    _selectionChange: function() {
+      var s = this._selection.get();
+      if (this.multi) {
+        this._setSelectedItems(s);
+      } else {
+        this._setSelectedItems([s]);
+        this._setSelectedItem(s);
+      }
+    },
+
+    _toggleSelected: function(value) {
+      var i = this.selectedValues.indexOf(value);
+      var unselected = i < 0;
+      if (unselected) {
+        this.push('selectedValues',value);
+      } else {
+        this.splice('selectedValues',i,1);
+      }
+    },
+
+    _valuesToItems: function(values) {
+      return (values == null) ? null : values.map(function(value) {
+        return this._valueToItem(value);
+      }, this);
+    }
+  };
+
+  /** @polymerBehavior */
+  Polymer.IronMultiSelectableBehavior = [
+    Polymer.IronSelectableBehavior,
+    Polymer.IronMultiSelectableBehaviorImpl
+  ];
+/**
+   * `Polymer.IronMenuBehavior` implements accessible menu behavior.
+   *
+   * @demo demo/index.html
+   * @polymerBehavior Polymer.IronMenuBehavior
+   */
+  Polymer.IronMenuBehaviorImpl = {
+
+    properties: {
+
+      /**
+       * Returns the currently focused item.
+       * @type {?Object}
+       */
+      focusedItem: {
+        observer: '_focusedItemChanged',
+        readOnly: true,
+        type: Object
+      },
+
+      /**
+       * The attribute to use on menu items to look up the item title. Typing the first
+       * letter of an item when the menu is open focuses that item. If unset, `textContent`
+       * will be used.
+       */
+      attrForItemTitle: {
+        type: String
+      }
+    },
+
+    hostAttributes: {
+      'role': 'menu',
+      'tabindex': '0'
+    },
+
+    observers: [
+      '_updateMultiselectable(multi)'
+    ],
+
+    listeners: {
+      'focus': '_onFocus',
+      'keydown': '_onKeydown',
+      'iron-items-changed': '_onIronItemsChanged'
+    },
+
+    keyBindings: {
+      'up': '_onUpKey',
+      'down': '_onDownKey',
+      'esc': '_onEscKey',
+      'shift+tab:keydown': '_onShiftTabDown'
+    },
+
+    attached: function() {
+      this._resetTabindices();
+    },
+
+    /**
+     * Selects the given value. If the `multi` property is true, then the selected state of the
+     * `value` will be toggled; otherwise the `value` will be selected.
+     *
+     * @param {string|number} value the value to select.
+     */
+    select: function(value) {
+      // Cancel automatically focusing a default item if the menu received focus
+      // through a user action selecting a particular item.
+      if (this._defaultFocusAsync) {
+        this.cancelAsync(this._defaultFocusAsync);
+        this._defaultFocusAsync = null;
+      }
+      var item = this._valueToItem(value);
+      if (item && item.hasAttribute('disabled')) return;
+      this._setFocusedItem(item);
+      Polymer.IronMultiSelectableBehaviorImpl.select.apply(this, arguments);
+    },
+
+    /**
+     * Resets all tabindex attributes to the appropriate value based on the
+     * current selection state. The appropriate value is `0` (focusable) for
+     * the default selected item, and `-1` (not keyboard focusable) for all
+     * other items.
+     */
+    _resetTabindices: function() {
+      var selectedItem = this.multi ? (this.selectedItems && this.selectedItems[0]) : this.selectedItem;
+
+      this.items.forEach(function(item) {
+        item.setAttribute('tabindex', item === selectedItem ? '0' : '-1');
+      }, this);
+    },
+
+    /**
+     * Sets appropriate ARIA based on whether or not the menu is meant to be
+     * multi-selectable.
+     *
+     * @param {boolean} multi True if the menu should be multi-selectable.
+     */
+    _updateMultiselectable: function(multi) {
+      if (multi) {
+        this.setAttribute('aria-multiselectable', 'true');
+      } else {
+        this.removeAttribute('aria-multiselectable');
+      }
+    },
+
+    /**
+     * Given a KeyboardEvent, this method will focus the appropriate item in the
+     * menu (if there is a relevant item, and it is possible to focus it).
+     *
+     * @param {KeyboardEvent} event A KeyboardEvent.
+     */
+    _focusWithKeyboardEvent: function(event) {
+      for (var i = 0, item; item = this.items[i]; i++) {
+        var attr = this.attrForItemTitle || 'textContent';
+        var title = item[attr] || item.getAttribute(attr);
+
+        if (!item.hasAttribute('disabled') && title &&
+            title.trim().charAt(0).toLowerCase() === String.fromCharCode(event.keyCode).toLowerCase()) {
+          this._setFocusedItem(item);
+          break;
+        }
+      }
+    },
+
+    /**
+     * Focuses the previous item (relative to the currently focused item) in the
+     * menu, disabled items will be skipped.
+     * Loop until length + 1 to handle case of single item in menu.
+     */
+    _focusPrevious: function() {
+      var length = this.items.length;
+      var curFocusIndex = Number(this.indexOf(this.focusedItem));
+      for (var i = 1; i < length + 1; i++) {
+        var item = this.items[(curFocusIndex - i + length) % length];
+        if (!item.hasAttribute('disabled')) {
+          this._setFocusedItem(item);
+          return;
+        }
+      }
+    },
+
+    /**
+     * Focuses the next item (relative to the currently focused item) in the
+     * menu, disabled items will be skipped.
+     * Loop until length + 1 to handle case of single item in menu.
+     */
+    _focusNext: function() {
+      var length = this.items.length;
+      var curFocusIndex = Number(this.indexOf(this.focusedItem));
+      for (var i = 1; i < length + 1; i++) {
+        var item = this.items[(curFocusIndex + i) % length];
+        if (!item.hasAttribute('disabled')) {
+          this._setFocusedItem(item);
+          return;
+        }
+      }
+    },
+
+    /**
+     * Mutates items in the menu based on provided selection details, so that
+     * all items correctly reflect selection state.
+     *
+     * @param {Element} item An item in the menu.
+     * @param {boolean} isSelected True if the item should be shown in a
+     * selected state, otherwise false.
+     */
+    _applySelection: function(item, isSelected) {
+      if (isSelected) {
+        item.setAttribute('aria-selected', 'true');
+      } else {
+        item.removeAttribute('aria-selected');
+      }
+      Polymer.IronSelectableBehavior._applySelection.apply(this, arguments);
+    },
+
+    /**
+     * Discretely updates tabindex values among menu items as the focused item
+     * changes.
+     *
+     * @param {Element} focusedItem The element that is currently focused.
+     * @param {?Element} old The last element that was considered focused, if
+     * applicable.
+     */
+    _focusedItemChanged: function(focusedItem, old) {
+      old && old.setAttribute('tabindex', '-1');
+      if (focusedItem) {
+        focusedItem.setAttribute('tabindex', '0');
+        focusedItem.focus();
+      }
+    },
+
+    /**
+     * A handler that responds to mutation changes related to the list of items
+     * in the menu.
+     *
+     * @param {CustomEvent} event An event containing mutation records as its
+     * detail.
+     */
+    _onIronItemsChanged: function(event) {
+      if (event.detail.addedNodes.length) {
+        this._resetTabindices();
+      }
+    },
+
+    /**
+     * Handler that is called when a shift+tab keypress is detected by the menu.
+     *
+     * @param {CustomEvent} event A key combination event.
+     */
+    _onShiftTabDown: function(event) {
+      var oldTabIndex = this.getAttribute('tabindex');
+
+      Polymer.IronMenuBehaviorImpl._shiftTabPressed = true;
+
+      this._setFocusedItem(null);
+
+      this.setAttribute('tabindex', '-1');
+
+      this.async(function() {
+        this.setAttribute('tabindex', oldTabIndex);
+        Polymer.IronMenuBehaviorImpl._shiftTabPressed = false;
+        // NOTE(cdata): polymer/polymer#1305
+      }, 1);
+    },
+
+    /**
+     * Handler that is called when the menu receives focus.
+     *
+     * @param {FocusEvent} event A focus event.
+     */
+    _onFocus: function(event) {
+      if (Polymer.IronMenuBehaviorImpl._shiftTabPressed) {
+        // do not focus the menu itself
+        return;
+      }
+
+      // Do not focus the selected tab if the deepest target is part of the
+      // menu element's local DOM and is focusable.
+      var rootTarget = /** @type {?HTMLElement} */(
+          Polymer.dom(event).rootTarget);
+      if (rootTarget !== this && typeof rootTarget.tabIndex !== "undefined" && !this.isLightDescendant(rootTarget)) {
+        return;
+      }
+
+      // clear the cached focus item
+      this._defaultFocusAsync = this.async(function() {
+        // focus the selected item when the menu receives focus, or the first item
+        // if no item is selected
+        var selectedItem = this.multi ? (this.selectedItems && this.selectedItems[0]) : this.selectedItem;
+
+        this._setFocusedItem(null);
+
+        if (selectedItem) {
+          this._setFocusedItem(selectedItem);
+        } else if (this.items[0]) {
+          // We find the first none-disabled item (if one exists)
+          this._focusNext();
+        }
+      });
+    },
+
+    /**
+     * Handler that is called when the up key is pressed.
+     *
+     * @param {CustomEvent} event A key combination event.
+     */
+    _onUpKey: function(event) {
+      // up and down arrows moves the focus
+      this._focusPrevious();
+      event.detail.keyboardEvent.preventDefault();
+    },
+
+    /**
+     * Handler that is called when the down key is pressed.
+     *
+     * @param {CustomEvent} event A key combination event.
+     */
+    _onDownKey: function(event) {
+      this._focusNext();
+      event.detail.keyboardEvent.preventDefault();
+    },
+
+    /**
+     * Handler that is called when the esc key is pressed.
+     *
+     * @param {CustomEvent} event A key combination event.
+     */
+    _onEscKey: function(event) {
+      // esc blurs the control
+      this.focusedItem.blur();
+    },
+
+    /**
+     * Handler that is called when a keydown event is detected.
+     *
+     * @param {KeyboardEvent} event A keyboard event.
+     */
+    _onKeydown: function(event) {
+      if (!this.keyboardEventMatchesKeys(event, 'up down esc')) {
+        // all other keys focus the menu item starting with that character
+        this._focusWithKeyboardEvent(event);
+      }
+      event.stopPropagation();
+    },
+
+    // override _activateHandler
+    _activateHandler: function(event) {
+      Polymer.IronSelectableBehavior._activateHandler.call(this, event);
+      event.stopPropagation();
+    }
+  };
+
+  Polymer.IronMenuBehaviorImpl._shiftTabPressed = false;
+
+  /** @polymerBehavior Polymer.IronMenuBehavior */
+  Polymer.IronMenuBehavior = [
+    Polymer.IronMultiSelectableBehavior,
+    Polymer.IronA11yKeysBehavior,
+    Polymer.IronMenuBehaviorImpl
+  ];
+(function() {
+      Polymer({
+        is: 'paper-listbox',
+
+        behaviors: [
+          Polymer.IronMenuBehavior
+        ],
+
+        hostAttributes: {
+          role: 'listbox'
+        }
+      });
+    })();
+Polymer({
+      is: 'paper-toolbar',
+
+      hostAttributes: {
+        'role': 'toolbar'
+      },
+
+      properties: {
+        /**
+         * Controls how the items are aligned horizontally when they are placed
+         * at the bottom.
+         * Options are `start`, `center`, `end`, `justified` and `around`.
+         */
+        bottomJustify: {
+          type: String,
+          value: ''
+        },
+
+        /**
+         * Controls how the items are aligned horizontally.
+         * Options are `start`, `center`, `end`, `justified` and `around`.
+         */
+        justify: {
+          type: String,
+          value: ''
+        },
+
+        /**
+         * Controls how the items are aligned horizontally when they are placed
+         * in the middle.
+         * Options are `start`, `center`, `end`, `justified` and `around`.
+         */
+        middleJustify: {
+          type: String,
+          value: ''
+        }
+
+      },
+
+      attached: function() {
+        this._observer = this._observe(this);
+        this._updateAriaLabelledBy();
+      },
+
+      detached: function() {
+        if (this._observer) {
+          this._observer.disconnect();
+        }
+      },
+
+      _observe: function(node) {
+        var observer = new MutationObserver(function() {
+          this._updateAriaLabelledBy();
+        }.bind(this));
+        observer.observe(node, {
+          childList: true,
+          subtree: true
+        });
+        return observer;
+      },
+
+      _updateAriaLabelledBy: function() {
+        var labelledBy = [];
+        var contents = Polymer.dom(this.root).querySelectorAll('content');
+        for (var content, index = 0; content = contents[index]; index++) {
+          var nodes = Polymer.dom(content).getDistributedNodes();
+          for (var node, jndex = 0; node = nodes[jndex]; jndex++) {
+            if (node.classList && node.classList.contains('title')) {
+              if (node.id) {
+                labelledBy.push(node.id);
+              } else {
+                var id = 'paper-toolbar-label-' + Math.floor(Math.random() * 10000);
+                node.id = id;
+                labelledBy.push(id);
+              }
+            }
+          }
+        }
+        if (labelledBy.length > 0) {
+          this.setAttribute('aria-labelledby', labelledBy.join(' '));
+        }
+      },
+
+      _computeBarExtraClasses: function(barJustify) {
+        if (!barJustify) return '';
+
+        return barJustify + (barJustify === 'justified' ? '' : '-justified');
+      }
+    });
+/**
    * The `iron-iconset-svg` element allows users to define their own icon sets
    * that contain svg icons. The svg icon elements should be children of the
    * `iron-iconset-svg` element. Multiple icons should be given distinct id's.
    *
    * Using svg elements to create icons has a few advantages over traditional
-   * bitmap graphics like jpg or png. Icons that use svg are vector based so they
-   * are resolution independent and should look good on any device. They are
-   * stylable via css. Icons can be themed, colorized, and even animated.
+   * bitmap graphics like jpg or png. Icons that use svg are vector based so
+   * they are resolution independent and should look good on any device. They
+   * are stylable via css. Icons can be themed, colorized, and even animated.
    *
    * Example:
    *
@@ -10933,8 +13737,8 @@ Polymer({
    *       <svg>
    *         <defs>
    *           <g id="shape">
-   *             <rect x="50" y="50" width="50" height="50" />
-   *             <circle cx="50" cy="50" r="50" />
+   *             <rect x="12" y="0" width="12" height="24" />
+   *             <circle cx="12" cy="12" r="12" />
    *           </g>
    *         </defs>
    *       </svg>
@@ -10950,18 +13754,15 @@ Polymer({
    *
    * @element iron-iconset-svg
    * @demo demo/index.html
+   * @implements {Polymer.Iconset}
    */
   Polymer({
-
     is: 'iron-iconset-svg',
 
     properties: {
 
       /**
        * The name of the iconset.
-       *
-       * @attribute name
-       * @type string
        */
       name: {
         type: String,
@@ -10970,16 +13771,16 @@ Polymer({
 
       /**
        * The size of an individual icon. Note that icons must be square.
-       *
-       * @attribute iconSize
-       * @type number
-       * @default 24
        */
       size: {
         type: Number,
         value: 24
       }
 
+    },
+
+    attached: function() {
+      this.style.display = 'none';
     },
 
     /**
@@ -11003,7 +13804,7 @@ Polymer({
      * @method applyIcon
      * @param {Element} element Element to which the icon is applied.
      * @param {string} iconName Name of the icon to apply.
-     * @return {Element} The svg element which renders the icon.
+     * @return {?Element} The svg element which renders the icon.
      */
     applyIcon: function(element, iconName) {
       // insert svg element into shadow root, if it exists
@@ -11041,6 +13842,9 @@ Polymer({
      */
     _nameChanged: function() {
       new Polymer.IronMeta({type: 'iconset', key: this.name, value: this});
+      this.async(function() {
+        this.fire('iron-iconset-added', this, {node: window});
+      });
     },
 
     /**
@@ -11081,13 +13885,15 @@ Polymer({
      */
     _prepareSvgClone: function(sourceSvg, size) {
       if (sourceSvg) {
-        var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('viewBox', ['0', '0', size, size].join(' '));
+        var content = sourceSvg.cloneNode(true),
+            svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'),
+            viewBox = content.getAttribute('viewBox') || '0 0 ' + size + ' ' + size;
+        svg.setAttribute('viewBox', viewBox);
         svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
         // TODO(dfreedm): `pointer-events: none` works around https://crbug.com/370136
         // TODO(sjmiles): inline style may not be ideal, but avoids requiring a shadow-root
         svg.style.cssText = 'pointer-events: none; display: block; width: 100%; height: 100%;';
-        svg.appendChild(sourceSvg.cloneNode(true)).removeAttribute('id');
+        svg.appendChild(content).removeAttribute('id');
         return svg;
       }
       return null;
@@ -12138,396 +14944,6 @@ if (!window.Promise) {
     },
 
   });
-/**
-   * @param {!Function} selectCallback
-   * @constructor
-   */
-  Polymer.IronSelection = function(selectCallback) {
-    this.selection = [];
-    this.selectCallback = selectCallback;
-  };
-
-  Polymer.IronSelection.prototype = {
-
-    /**
-     * Retrieves the selected item(s).
-     *
-     * @method get
-     * @returns Returns the selected item(s). If the multi property is true,
-     * `get` will return an array, otherwise it will return
-     * the selected item or undefined if there is no selection.
-     */
-    get: function() {
-      return this.multi ? this.selection : this.selection[0];
-    },
-
-    /**
-     * Clears all the selection except the ones indicated.
-     *
-     * @method clear
-     * @param {Array} excludes items to be excluded.
-     */
-    clear: function(excludes) {
-      this.selection.slice().forEach(function(item) {
-        if (!excludes || excludes.indexOf(item) < 0) {
-          this.setItemSelected(item, false);
-        }
-      }, this);
-    },
-
-    /**
-     * Indicates if a given item is selected.
-     *
-     * @method isSelected
-     * @param {*} item The item whose selection state should be checked.
-     * @returns Returns true if `item` is selected.
-     */
-    isSelected: function(item) {
-      return this.selection.indexOf(item) >= 0;
-    },
-
-    /**
-     * Sets the selection state for a given item to either selected or deselected.
-     *
-     * @method setItemSelected
-     * @param {*} item The item to select.
-     * @param {boolean} isSelected True for selected, false for deselected.
-     */
-    setItemSelected: function(item, isSelected) {
-      if (item != null) {
-        if (isSelected) {
-          this.selection.push(item);
-        } else {
-          var i = this.selection.indexOf(item);
-          if (i >= 0) {
-            this.selection.splice(i, 1);
-          }
-        }
-        if (this.selectCallback) {
-          this.selectCallback(item, isSelected);
-        }
-      }
-    },
-
-    /**
-     * Sets the selection state for a given item. If the `multi` property
-     * is true, then the selected state of `item` will be toggled; otherwise
-     * the `item` will be selected.
-     *
-     * @method select
-     * @param {*} item The item to select.
-     */
-    select: function(item) {
-      if (this.multi) {
-        this.toggle(item);
-      } else if (this.get() !== item) {
-        this.setItemSelected(this.get(), false);
-        this.setItemSelected(item, true);
-      }
-    },
-
-    /**
-     * Toggles the selection state for `item`.
-     *
-     * @method toggle
-     * @param {*} item The item to toggle.
-     */
-    toggle: function(item) {
-      this.setItemSelected(item, !this.isSelected(item));
-    }
-
-  };
-/** @polymerBehavior */
-  Polymer.IronSelectableBehavior = {
-
-    properties: {
-
-      /**
-       * If you want to use the attribute value of an element for `selected` instead of the index,
-       * set this to the name of the attribute.
-       *
-       * @attribute attrForSelected
-       * @type {string}
-       */
-      attrForSelected: {
-        type: String,
-        value: null
-      },
-
-      /**
-       * Gets or sets the selected element. The default is to use the index of the item.
-       *
-       * @attribute selected
-       * @type {string}
-       */
-      selected: {
-        type: String,
-        notify: true
-      },
-
-      /**
-       * Returns the currently selected item.
-       *
-       * @attribute selectedItem
-       * @type {Object}
-       */
-      selectedItem: {
-        type: Object,
-        readOnly: true,
-        notify: true
-      },
-
-      /**
-       * The event that fires from items when they are selected. Selectable
-       * will listen for this event from items and update the selection state.
-       * Set to empty string to listen to no events.
-       *
-       * @attribute activateEvent
-       * @type {string}
-       * @default 'tap'
-       */
-      activateEvent: {
-        type: String,
-        value: 'tap',
-        observer: '_activateEventChanged'
-      },
-
-      /**
-       * This is a CSS selector sting.  If this is set, only items that matches the CSS selector
-       * are selectable.
-       *
-       * @attribute selectable
-       * @type {string}
-       */
-      selectable: String,
-
-      /**
-       * The class to set on elements when selected.
-       *
-       * @attribute selectedClass
-       * @type {string}
-       */
-      selectedClass: {
-        type: String,
-        value: 'iron-selected'
-      },
-
-      /**
-       * The attribute to set on elements when selected.
-       *
-       * @attribute selectedAttribute
-       * @type {string}
-       */
-      selectedAttribute: {
-        type: String,
-        value: null
-      }
-
-    },
-
-    observers: [
-      '_updateSelected(attrForSelected, selected)'
-    ],
-
-    excludedLocalNames: {
-      'template': 1
-    },
-
-    created: function() {
-      this._bindFilterItem = this._filterItem.bind(this);
-      this._selection = new Polymer.IronSelection(this._applySelection.bind(this));
-    },
-
-    attached: function() {
-      this._observer = this._observeItems(this);
-      this._contentObserver = this._observeContent(this);
-    },
-
-    detached: function() {
-      if (this._observer) {
-        this._observer.disconnect();
-      }
-      if (this._contentObserver) {
-        this._contentObserver.disconnect();
-      }
-      this._removeListener(this.activateEvent);
-    },
-
-    /**
-     * Returns an array of selectable items.
-     *
-     * @property items
-     * @type Array
-     */
-    get items() {
-      var nodes = Polymer.dom(this).queryDistributedElements(this.selectable || '*');
-      return Array.prototype.filter.call(nodes, this._bindFilterItem);
-    },
-
-    /**
-     * Returns the index of the given item.
-     *
-     * @method indexOf
-     * @param {Object} item
-     * @returns Returns the index of the item
-     */
-    indexOf: function(item) {
-      return this.items.indexOf(item);
-    },
-
-    /**
-     * Selects the given value.
-     *
-     * @method select
-     * @param {string} value the value to select.
-     */
-    select: function(value) {
-      this.selected = value;
-    },
-
-    /**
-     * Selects the previous item.
-     *
-     * @method selectPrevious
-     */
-    selectPrevious: function() {
-      var length = this.items.length;
-      var index = (Number(this._valueToIndex(this.selected)) - 1 + length) % length;
-      this.selected = this._indexToValue(index);
-    },
-
-    /**
-     * Selects the next item.
-     *
-     * @method selectNext
-     */
-    selectNext: function() {
-      var index = (Number(this._valueToIndex(this.selected)) + 1) % this.items.length;
-      this.selected = this._indexToValue(index);
-    },
-
-    _addListener: function(eventName) {
-      this.listen(this, eventName, '_activateHandler');
-    },
-
-    _removeListener: function(eventName) {
-      // There is no unlisten yet...
-      // https://github.com/Polymer/polymer/issues/1639
-      //this.removeEventListener(eventName, this._bindActivateHandler);
-    },
-
-    _activateEventChanged: function(eventName, old) {
-      this._removeListener(old);
-      this._addListener(eventName);
-    },
-
-    _updateSelected: function() {
-      this._selectSelected(this.selected);
-    },
-
-    _selectSelected: function(selected) {
-      this._selection.select(this._valueToItem(this.selected));
-    },
-
-    _filterItem: function(node) {
-      return !this.excludedLocalNames[node.localName];
-    },
-
-    _valueToItem: function(value) {
-      return (value == null) ? null : this.items[this._valueToIndex(value)];
-    },
-
-    _valueToIndex: function(value) {
-      if (this.attrForSelected) {
-        for (var i = 0, item; item = this.items[i]; i++) {
-          if (this._valueForItem(item) == value) {
-            return i;
-          }
-        }
-      } else {
-        return Number(value);
-      }
-    },
-
-    _indexToValue: function(index) {
-      if (this.attrForSelected) {
-        var item = this.items[index];
-        if (item) {
-          return this._valueForItem(item);
-        }
-      } else {
-        return index;
-      }
-    },
-
-    _valueForItem: function(item) {
-      return item[this.attrForSelected] || item.getAttribute(this.attrForSelected);
-    },
-
-    _applySelection: function(item, isSelected) {
-      if (this.selectedClass) {
-        this.toggleClass(this.selectedClass, isSelected, item);
-      }
-      if (this.selectedAttribute) {
-        this.toggleAttribute(this.selectedAttribute, isSelected, item);
-      }
-      this._selectionChange();
-      this.fire('iron-' + (isSelected ? 'select' : 'deselect'), {item: item});
-    },
-
-    _selectionChange: function() {
-      this._setSelectedItem(this._selection.get());
-    },
-
-    // observe content changes under the given node.
-    _observeContent: function(node) {
-      var content = node.querySelector('content');
-      if (content && content.parentElement === node) {
-        return this._observeItems(node.domHost);
-      }
-    },
-
-    // observe items change under the given node.
-    _observeItems: function(node) {
-      var observer = new MutationObserver(function() {
-        if (this.selected != null) {
-          this._updateSelected();
-        }
-      }.bind(this));
-      observer.observe(node, {
-        childList: true,
-        subtree: true
-      });
-      return observer;
-    },
-
-    _activateHandler: function(e) {
-      // TODO: remove this when https://github.com/Polymer/polymer/issues/1639 is fixed so we
-      // can just remove the old event listener.
-      if (e.type !== this.activateEvent) {
-        return;
-      }
-      var t = e.target;
-      var items = this.items;
-      while (t && t != this) {
-        var i = items.indexOf(t);
-        if (i >= 0) {
-          var value = this._indexToValue(i);
-          this._itemActivate(value, t);
-          return;
-        }
-        t = t.parentNode;
-      }
-    },
-
-    _itemActivate: function(value, item) {
-      if (!this.fire('iron-activate',
-          {selected: value, item: item}, {cancelable: true}).defaultPrevented) {
-        this.select(value);
-      }
-    }
-
-  };
 Polymer({
 
       is: 'iron-pages',
@@ -12562,7 +14978,6 @@ Polymer({
     is: 'paper-material',
 
     properties: {
-
       /**
        * The z-depth of this element, from 0-5. Setting to 0 will remove the
        * shadow, and each increasing number greater than 0 will be "deeper"
@@ -12594,7 +15009,25 @@ Polymer({
     }
   });
 /**
-   * Use `Polymer.IronValidatableBehavior` to implement an element that validates user input.
+   * Singleton IronMeta instance.
+   */
+  Polymer.IronValidatableBehaviorMeta = null;
+
+  /**
+   * `Use Polymer.IronValidatableBehavior` to implement an element that validates user input.
+   * Use the related `Polymer.IronValidatorBehavior` to add custom validation logic to an iron-input.
+   *
+   * By default, an `<iron-form>` element validates its fields when the user presses the submit button.
+   * To validate a form imperatively, call the form's `validate()` method, which in turn will
+   * call `validate()` on all its children. By using `Polymer.IronValidatableBehavior`, your
+   * custom element will get a public `validate()`, which
+   * will return the validity of the element, and a corresponding `invalid` attribute,
+   * which can be used for styling.
+   *
+   * To implement the custom validation logic of your element, you must override
+   * the protected `_getValidity()` method of this behaviour, rather than `validate()`.
+   * See [this](https://github.com/PolymerElements/iron-form/blob/master/demo/simple-element.html)
+   * for an example.
    *
    * ### Accessibility
    *
@@ -12607,14 +15040,6 @@ Polymer({
   Polymer.IronValidatableBehavior = {
 
     properties: {
-
-      /**
-       * Namespace for this validator.
-       */
-      validatorType: {
-        type: String,
-        value: 'validator'
-      },
 
       /**
        * Name of the validator to use.
@@ -12633,22 +15058,36 @@ Polymer({
         value: false
       },
 
+      /**
+       * This property is deprecated and should not be used. Use the global
+       * validator meta singleton, `Polymer.IronValidatableBehaviorMeta` instead.
+       */
       _validatorMeta: {
         type: Object
-      }
+      },
 
+      /**
+       * Namespace for this validator. This property is deprecated and should
+       * not be used. For all intents and purposes, please consider it a
+       * read-only, config-time property.
+       */
+      validatorType: {
+        type: String,
+        value: 'validator'
+      },
+
+      _validator: {
+        type: Object,
+        computed: '__computeValidator(validator)'
+      }
     },
 
     observers: [
       '_invalidChanged(invalid)'
     ],
 
-    get _validator() {
-      return this._validatorMeta && this._validatorMeta.byKey(this.validator);
-    },
-
-    ready: function() {
-      this._validatorMeta = new Polymer.IronMeta({type: this.validatorType});
+    registered: function() {
+      Polymer.IronValidatableBehaviorMeta = new Polymer.IronMeta({type: 'validator'});
     },
 
     _invalidChanged: function() {
@@ -12695,6 +15134,11 @@ Polymer({
         return this._validator.validate(value);
       }
       return true;
+    },
+
+    __computeValidator: function() {
+      return Polymer.IronValidatableBehaviorMeta &&
+          Polymer.IronValidatableBehaviorMeta.byKey(this.validator);
     }
   };
 /*
@@ -12752,19 +15196,26 @@ is separate from validation, and `allowed-pattern` does not affect how the input
       },
 
       /**
-       * Set to true to prevent the user from entering invalid input. The new input characters are
-       * matched with `allowedPattern` if it is set, otherwise it will use the `pattern` attribute if
-       * set, or the `type` attribute (only supported for `type=number`).
+       * Set to true to prevent the user from entering invalid input. If `allowedPattern` is set,
+       * any character typed by the user will be matched against that pattern, and rejected if it's not a match.
+       * Pasted input will have each character checked individually; if any character
+       * doesn't match `allowedPattern`, the entire pasted string will be rejected.
+       * If `allowedPattern` is not set, it will use the `type` attribute (only supported for `type=number`).
        */
       preventInvalidInput: {
         type: Boolean
       },
 
       /**
-       * Regular expression to match valid input characters.
+       * Regular expression that list the characters allowed as input.
+       * This pattern represents the allowed characters for the field; as the user inputs text,
+       * each individual character will be checked against the pattern (rather than checking
+       * the entire value as a whole). The recommended format should be a list of allowed characters;
+       * for example, `[a-zA-Z0-9.+-!;:]`
        */
       allowedPattern: {
-        type: String
+        type: String,
+        observer: "_allowedPatternChanged"
       },
 
       _previousValidInput: {
@@ -12784,12 +15235,51 @@ is separate from validation, and `allowed-pattern` does not affect how the input
       'keypress': '_onKeypress'
     },
 
+    /** @suppress {checkTypes} */
+    registered: function() {
+      // Feature detect whether we need to patch dispatchEvent (i.e. on FF and IE).
+      if (!this._canDispatchEventOnDisabled()) {
+        this._origDispatchEvent = this.dispatchEvent;
+        this.dispatchEvent = this._dispatchEventFirefoxIE;
+      }
+    },
+
+    created: function() {
+      Polymer.IronA11yAnnouncer.requestAvailability();
+    },
+
+    _canDispatchEventOnDisabled: function() {
+      var input = document.createElement('input');
+      var canDispatch = false;
+      input.disabled = true;
+
+      input.addEventListener('feature-check-dispatch-event', function() {
+        canDispatch = true;
+      });
+
+      try {
+        input.dispatchEvent(new Event('feature-check-dispatch-event'));
+      } catch(e) {}
+
+      return canDispatch;
+    },
+
+    _dispatchEventFirefoxIE: function() {
+      // Due to Firefox bug, events fired on disabled form controls can throw
+      // errors; furthermore, neither IE nor Firefox will actually dispatch
+      // events from disabled form controls; as such, we toggle disable around
+      // the dispatch to allow notifying properties to notify
+      // See issue #47 for details
+      var disabled = this.disabled;
+      this.disabled = false;
+      this._origDispatchEvent.apply(this, arguments);
+      this.disabled = disabled;
+    },
+
     get _patternRegExp() {
       var pattern;
       if (this.allowedPattern) {
         pattern = new RegExp(this.allowedPattern);
-      } else if (this.pattern) {
-        pattern = new RegExp(this.pattern);
       } else {
         switch (this.type) {
           case 'number':
@@ -12809,10 +15299,15 @@ is separate from validation, and `allowed-pattern` does not affect how the input
      */
     _bindValueChanged: function() {
       if (this.value !== this.bindValue) {
-        this.value = !(this.bindValue || this.bindValue === 0) ? '' : this.bindValue;
+        this.value = !(this.bindValue || this.bindValue === 0 || this.bindValue === false) ? '' : this.bindValue;
       }
       // manually notify because we don't want to notify until after setting value
       this.fire('bind-value-changed', {value: this.bindValue});
+    },
+
+    _allowedPatternChanged: function() {
+      // Force to prevent invalid input when an `allowed-pattern` is set
+      this.preventInvalidInput = this.allowedPattern ? true : false;
     },
 
     _onInput: function() {
@@ -12821,6 +15316,7 @@ is separate from validation, and `allowed-pattern` does not affect how the input
       if (this.preventInvalidInput && !this._patternAlreadyChecked) {
         var valid = this._checkPatternValidity();
         if (!valid) {
+          this._announceInvalidCharacter('Invalid string of characters not entered.');
           this.value = this._previousValidInput;
         }
       }
@@ -12881,6 +15377,7 @@ is separate from validation, and `allowed-pattern` does not affect how the input
       var thisChar = String.fromCharCode(event.charCode);
       if (this._isPrintable(event) && !regexp.test(thisChar)) {
         event.preventDefault();
+        this._announceInvalidCharacter('Invalid character ' + thisChar + ' not entered.');
       }
     },
 
@@ -12903,23 +15400,29 @@ is separate from validation, and `allowed-pattern` does not affect how the input
      * @return {boolean} True if the value is valid.
      */
     validate: function() {
-      // Empty, non-required input is valid.
-      if (!this.required && this.value == '') {
-        this.invalid = false;
-        return true;
+      // First, check what the browser thinks. Some inputs (like type=number)
+      // behave weirdly and will set the value to "" if something invalid is
+      // entered, but will set the validity correctly.
+      var valid =  this.checkValidity();
+
+      // Only do extra checking if the browser thought this was valid.
+      if (valid) {
+        // Empty, required input is invalid
+        if (this.required && this.value === '') {
+          valid = false;
+        } else if (this.hasValidator()) {
+          valid = Polymer.IronValidatableBehavior.validate.call(this, this.value);
+        }
       }
 
-      var valid;
-      if (this.hasValidator()) {
-        valid = Polymer.IronValidatableBehavior.validate.call(this, this.value);
-      } else {
-        this.invalid = !this.validity.valid;
-        valid = this.validity.valid;
-      }
+      this.invalid = !valid;
       this.fire('iron-input-validate');
       return valid;
-    }
+    },
 
+    _announceInvalidCharacter: function(message) {
+      this.fire('iron-announce', { text: message });
+    }
   });
 
   /*
@@ -12928,6 +15431,14 @@ is separate from validation, and `allowed-pattern` does not affect how the input
   */
 (function() {
     'use strict';
+    // Used to calculate the scroll direction during touch events.
+    var LAST_TOUCH_POSITION = {
+      pageX: 0,
+      pageY: 0
+    };
+    // Used to avoid computing event.path and filter scrollable nodes (better perf).
+    var ROOT_TARGET = null;
+    var SCROLLABLE_NODES = [];
 
     /**
      * The IronDropdownScrollManager is intended to provide a central source
@@ -12945,9 +15456,8 @@ is separate from validation, and `allowed-pattern` does not affect how the input
         return this._lockingElements[this._lockingElements.length - 1];
       },
 
-
       /**
-       * Returns true if the provided element is "scroll locked," which is to
+       * Returns true if the provided element is "scroll locked", which is to
        * say that it cannot be scrolled via pointer or keyboard interactions.
        *
        * @param {HTMLElement} element An HTML element instance which may or may
@@ -13040,13 +15550,6 @@ is separate from validation, and `allowed-pattern` does not affect how the input
 
       _unlockedElementCache: null,
 
-      _originalBodyStyles: {},
-
-      _isScrollingKeypress: function(event) {
-        return Polymer.IronA11yKeysBehavior.keyboardEventMatchesKeys(
-          event, 'pageup pagedown home end up left down right');
-      },
-
       _hasCachedLockedElement: function(element) {
         return this._lockedElementCache.indexOf(element) > -1;
       },
@@ -13089,58 +15592,178 @@ is separate from validation, and `allowed-pattern` does not affect how the input
       },
 
       _scrollInteractionHandler: function(event) {
-        var scrolledElement =
-            /** @type {HTMLElement} */(Polymer.dom(event).rootTarget);
-        if (Polymer
-              .IronDropdownScrollManager
-              .elementIsScrollLocked(scrolledElement)) {
-          if (event.type === 'keydown' &&
-              !Polymer.IronDropdownScrollManager._isScrollingKeypress(event)) {
-            return;
-          }
-
+        // Avoid canceling an event with cancelable=false, e.g. scrolling is in
+        // progress and cannot be interrupted.
+        if (event.cancelable && this._shouldPreventScrolling(event)) {
           event.preventDefault();
+        }
+        // If event has targetTouches (touch event), update last touch position.
+        if (event.targetTouches) {
+          var touch = event.targetTouches[0];
+          LAST_TOUCH_POSITION.pageX = touch.pageX;
+          LAST_TOUCH_POSITION.pageY = touch.pageY;
         }
       },
 
       _lockScrollInteractions: function() {
-        // Memoize body inline styles:
-        this._originalBodyStyles.overflow = document.body.style.overflow;
-        this._originalBodyStyles.overflowX = document.body.style.overflowX;
-        this._originalBodyStyles.overflowY = document.body.style.overflowY;
-
-        // Disable overflow scrolling on body:
-        // TODO(cdata): It is technically not sufficient to hide overflow on
-        // body alone. A better solution might be to traverse all ancestors of
-        // the current scroll locking element and hide overflow on them. This
-        // becomes expensive, though, as it would have to be redone every time
-        // a new scroll locking element is added.
-        document.body.style.overflow = 'hidden';
-        document.body.style.overflowX = 'hidden';
-        document.body.style.overflowY = 'hidden';
-
+        this._boundScrollHandler = this._boundScrollHandler ||
+          this._scrollInteractionHandler.bind(this);
         // Modern `wheel` event for mouse wheel scrolling:
-        document.addEventListener('wheel', this._scrollInteractionHandler, true);
+        document.addEventListener('wheel', this._boundScrollHandler, true);
         // Older, non-standard `mousewheel` event for some FF:
-        document.addEventListener('mousewheel', this._scrollInteractionHandler, true);
+        document.addEventListener('mousewheel', this._boundScrollHandler, true);
         // IE:
-        document.addEventListener('DOMMouseScroll', this._scrollInteractionHandler, true);
+        document.addEventListener('DOMMouseScroll', this._boundScrollHandler, true);
+        // Save the SCROLLABLE_NODES on touchstart, to be used on touchmove.
+        document.addEventListener('touchstart', this._boundScrollHandler, true);
         // Mobile devices can scroll on touch move:
-        document.addEventListener('touchmove', this._scrollInteractionHandler, true);
-        // Capture keydown to prevent scrolling keys (pageup, pagedown etc.)
-        document.addEventListener('keydown', this._scrollInteractionHandler, true);
+        document.addEventListener('touchmove', this._boundScrollHandler, true);
       },
 
       _unlockScrollInteractions: function() {
-        document.body.style.overflow = this._originalBodyStyles.overflow;
-        document.body.style.overflowX = this._originalBodyStyles.overflowX;
-        document.body.style.overflowY = this._originalBodyStyles.overflowY;
+        document.removeEventListener('wheel', this._boundScrollHandler, true);
+        document.removeEventListener('mousewheel', this._boundScrollHandler, true);
+        document.removeEventListener('DOMMouseScroll', this._boundScrollHandler, true);
+        document.removeEventListener('touchstart', this._boundScrollHandler, true);
+        document.removeEventListener('touchmove', this._boundScrollHandler, true);
+      },
 
-        document.removeEventListener('wheel', this._scrollInteractionHandler, true);
-        document.removeEventListener('mousewheel', this._scrollInteractionHandler, true);
-        document.removeEventListener('DOMMouseScroll', this._scrollInteractionHandler, true);
-        document.removeEventListener('touchmove', this._scrollInteractionHandler, true);
-        document.removeEventListener('keydown', this._scrollInteractionHandler, true);
+      /**
+       * Returns true if the event causes scroll outside the current locking
+       * element, e.g. pointer/keyboard interactions, or scroll "leaking"
+       * outside the locking element when it is already at its scroll boundaries.
+       * @param {!Event} event
+       * @return {boolean}
+       * @private
+       */
+      _shouldPreventScrolling: function(event) {
+
+        // Update if root target changed. For touch events, ensure we don't
+        // update during touchmove.
+        var target = Polymer.dom(event).rootTarget;
+        if (event.type !== 'touchmove' && ROOT_TARGET !== target) {
+          ROOT_TARGET = target;
+          SCROLLABLE_NODES = this._getScrollableNodes(Polymer.dom(event).path);
+        }
+
+        // Prevent event if no scrollable nodes.
+        if (!SCROLLABLE_NODES.length) {
+          return true;
+        }
+        // Don't prevent touchstart event inside the locking element when it has
+        // scrollable nodes.
+        if (event.type === 'touchstart') {
+          return false;
+        }
+        // Get deltaX/Y.
+        var info = this._getScrollInfo(event);
+        // Prevent if there is no child that can scroll.
+        return !this._getScrollingNode(SCROLLABLE_NODES, info.deltaX, info.deltaY);
+      },
+
+      /**
+       * Returns an array of scrollable nodes up to the current locking element,
+       * which is included too if scrollable.
+       * @param {!Array<Node>} nodes
+       * @return {Array<Node>} scrollables
+       * @private
+       */
+      _getScrollableNodes: function(nodes) {
+        var scrollables = [];
+        var lockingIndex = nodes.indexOf(this.currentLockingElement);
+        // Loop from root target to locking element (included).
+        for (var i = 0; i <= lockingIndex; i++) {
+          var node = nodes[i];
+          // Skip document fragments.
+          if (node.nodeType === 11) {
+            continue;
+          }
+          // Check inline style before checking computed style.
+          var style = node.style;
+          if (style.overflow !== 'scroll' && style.overflow !== 'auto') {
+            style = window.getComputedStyle(node);
+          }
+          if (style.overflow === 'scroll' || style.overflow === 'auto') {
+            scrollables.push(node);
+          }
+        }
+        return scrollables;
+      },
+
+      /**
+       * Returns the node that is scrolling. If there is no scrolling,
+       * returns undefined.
+       * @param {!Array<Node>} nodes
+       * @param {number} deltaX Scroll delta on the x-axis
+       * @param {number} deltaY Scroll delta on the y-axis
+       * @return {Node|undefined}
+       * @private
+       */
+      _getScrollingNode: function(nodes, deltaX, deltaY) {
+        // No scroll.
+        if (!deltaX && !deltaY) {
+          return;
+        }
+        // Check only one axis according to where there is more scroll.
+        // Prefer vertical to horizontal.
+        var verticalScroll = Math.abs(deltaY) >= Math.abs(deltaX);
+        for (var i = 0; i < nodes.length; i++) {
+          var node = nodes[i];
+          var canScroll = false;
+          if (verticalScroll) {
+            // delta < 0 is scroll up, delta > 0 is scroll down.
+            canScroll = deltaY < 0 ? node.scrollTop > 0 :
+              node.scrollTop < node.scrollHeight - node.clientHeight;
+          } else {
+            // delta < 0 is scroll left, delta > 0 is scroll right.
+            canScroll = deltaX < 0 ? node.scrollLeft > 0 :
+              node.scrollLeft < node.scrollWidth - node.clientWidth;
+          }
+          if (canScroll) {
+            return node;
+          }
+        }
+      },
+
+      /**
+       * Returns scroll `deltaX` and `deltaY`.
+       * @param {!Event} event The scroll event
+       * @return {{
+       *  deltaX: number The x-axis scroll delta (positive: scroll right,
+       *                 negative: scroll left, 0: no scroll),
+       *  deltaY: number The y-axis scroll delta (positive: scroll down,
+       *                 negative: scroll up, 0: no scroll)
+       * }} info
+       * @private
+       */
+      _getScrollInfo: function(event) {
+        var info = {
+          deltaX: event.deltaX,
+          deltaY: event.deltaY
+        };
+        // Already available.
+        if ('deltaX' in event) {
+          // do nothing, values are already good.
+        }
+        // Safari has scroll info in `wheelDeltaX/Y`.
+        else if ('wheelDeltaX' in event) {
+          info.deltaX = -event.wheelDeltaX;
+          info.deltaY = -event.wheelDeltaY;
+        }
+        // Firefox has scroll info in `detail` and `axis`.
+        else if ('axis' in event) {
+          info.deltaX = event.axis === 1 ? event.detail : 0;
+          info.deltaY = event.axis === 2 ? event.detail : 0;
+        }
+        // On mobile devices, calculate scroll direction.
+        else if (event.targetTouches) {
+          var touch = event.targetTouches[0];
+          // Touch moves from right to left => scrolling goes right.
+          info.deltaX = LAST_TOUCH_POSITION.pageX - touch.pageX;
+          // Touch moves from down to up => scrolling goes down.
+          info.deltaY = LAST_TOUCH_POSITION.pageY - touch.pageY;
+        }
+        return info;
       }
     };
   })();
@@ -13259,8 +15882,6 @@ is separate from validation, and `allowed-pattern` does not affect how the input
       });
 
     }());
-console.warn('This file is deprecated. Please use `iron-flex-layout/iron-flex-layout-classes.html`, and one of the specific dom-modules instead');
-console.warn('This file is deprecated. Please use `iron-flex-layout/iron-flex-layout-classes.html`, and one of the specific dom-modules instead');
 /**
    * Use `Polymer.PaperInputAddonBehavior` to implement an add-on for `<paper-input-container>`. A
    * add-on appears below the input, and may display information based on the input value and
@@ -13280,10 +15901,10 @@ console.warn('This file is deprecated. Please use `iron-flex-layout/iron-flex-la
     /**
      * The function called by `<paper-input-container>` when the input value or validity changes.
      * @param {{
-     *   inputElement: (Node|undefined),
+     *   inputElement: (Element|undefined),
      *   value: (string|undefined),
-     *   invalid: (boolean|undefined)
-     * }} state All properties are optional -
+     *   invalid: boolean
+     * }} state -
      *     inputElement: The input element.
      *     value: The input value.
      *     invalid: True if the input value is invalid.
@@ -13292,10 +15913,7 @@ console.warn('This file is deprecated. Please use `iron-flex-layout/iron-flex-la
     }
 
   };
-(function() {
-
-  Polymer({
-
+Polymer({
     is: 'paper-input-error',
 
     behaviors: [
@@ -13303,7 +15921,6 @@ console.warn('This file is deprecated. Please use `iron-flex-layout/iron-flex-la
     ],
 
     properties: {
-
       /**
        * True if the error is showing.
        */
@@ -13312,16 +15929,23 @@ console.warn('This file is deprecated. Please use `iron-flex-layout/iron-flex-la
         reflectToAttribute: true,
         type: Boolean
       }
-
     },
 
+    /**
+     * This overrides the update function in PaperInputAddonBehavior.
+     * @param {{
+     *   inputElement: (Element|undefined),
+     *   value: (string|undefined),
+     *   invalid: boolean
+     * }} state -
+     *     inputElement: The input element.
+     *     value: The input value.
+     *     invalid: True if the input value is invalid.
+     */
     update: function(state) {
       this._setInvalid(state.invalid);
     }
-
-  })
-
-})();
+  });
 (function() {
 
   Polymer({
@@ -16789,8 +19413,8 @@ Picker.extend( 'pickadate', DatePicker )
        * custom element that uses this behavior should also use
        * Polymer.IronValidatableBehavior and define a custom validation method.
        * Otherwise, a `required` element will always be considered valid.
-       * It's also strongly recomended to provide a visual style for the element
-       * when it's value is invalid.
+       * It's also strongly recommended to provide a visual style for the element
+       * when its value is invalid.
        */
       required: {
         type: Boolean,
@@ -16818,98 +19442,13 @@ Picker.extend( 'pickadate', DatePicker )
     }
 
   };
-/**
-   * @demo demo/index.html
-   * @polymerBehavior
-   */
-  Polymer.IronControlState = {
+// Generate unique, monotonically increasing IDs for labels (needed by
+  // aria-labelledby) and add-ons.
+  Polymer.PaperInputHelper = {};
+  Polymer.PaperInputHelper.NextLabelID = 1;
+  Polymer.PaperInputHelper.NextAddonID = 1;
 
-    properties: {
-
-      /**
-       * If true, the element currently has focus.
-       */
-      focused: {
-        type: Boolean,
-        value: false,
-        notify: true,
-        readOnly: true,
-        reflectToAttribute: true
-      },
-
-      /**
-       * If true, the user cannot interact with this element.
-       */
-      disabled: {
-        type: Boolean,
-        value: false,
-        notify: true,
-        observer: '_disabledChanged',
-        reflectToAttribute: true
-      },
-
-      _oldTabIndex: {
-        type: Number
-      },
-
-      _boundFocusBlurHandler: {
-        type: Function,
-        value: function() {
-          return this._focusBlurHandler.bind(this);
-        }
-      }
-
-    },
-
-    observers: [
-      '_changedControlState(focused, disabled)'
-    ],
-
-    ready: function() {
-      this.addEventListener('focus', this._boundFocusBlurHandler, true);
-      this.addEventListener('blur', this._boundFocusBlurHandler, true);
-    },
-
-    _focusBlurHandler: function(event) {
-      // NOTE(cdata):  if we are in ShadowDOM land, `event.target` will
-      // eventually become `this` due to retargeting; if we are not in
-      // ShadowDOM land, `event.target` will eventually become `this` due
-      // to the second conditional which fires a synthetic event (that is also
-      // handled). In either case, we can disregard `event.path`.
-
-      if (event.target === this) {
-        var focused = event.type === 'focus';
-        this._setFocused(focused);
-      } else if (!this.shadowRoot) {
-        this.fire(event.type, {sourceEvent: event}, {
-          node: this,
-          bubbles: event.bubbles,
-          cancelable: event.cancelable
-        });
-      }
-    },
-
-    _disabledChanged: function(disabled, old) {
-      this.setAttribute('aria-disabled', disabled ? 'true' : 'false');
-      this.style.pointerEvents = disabled ? 'none' : '';
-      if (disabled) {
-        this._oldTabIndex = this.tabIndex;
-        this.focused = false;
-        this.tabIndex = -1;
-      } else if (this._oldTabIndex !== undefined) {
-        this.tabIndex = this._oldTabIndex;
-      }
-    },
-
-    _changedControlState: function() {
-      // _controlStateChanged is abstract, follow-on behaviors may implement it
-      if (this._controlStateChanged) {
-        this._controlStateChanged();
-      }
-    }
-
-  };
-/**
+  /**
    * Use `Polymer.PaperInputBehavior` to implement inputs with `<paper-input-container>`. This
    * behavior is implemented by `<paper-input>`. It exposes a number of properties from
    * `<paper-input-container>` and `<input is="iron-input">` and they should be bound in your
@@ -16922,16 +19461,26 @@ Picker.extend( 'pickadate', DatePicker )
   Polymer.PaperInputBehaviorImpl = {
 
     properties: {
+      /**
+       * Fired when the input changes due to user interaction.
+       *
+       * @event change
+       */
 
       /**
-       * The label for this input. Bind this to `<paper-input-container>`'s `label` property.
+       * The label for this input. If you're using PaperInputBehavior to
+       * implement your own paper-input-like element, bind this to
+       * `<label>`'s content and `hidden` property, e.g.
+       * `<label hidden$="[[!label]]">[[label]]</label>` in your `template`
        */
       label: {
         type: String
       },
 
       /**
-       * The value for this input. Bind this to the `<input is="iron-input">`'s `bindValue`
+       * The value for this input. If you're using PaperInputBehavior to
+       * implement your own paper-input-like element, bind this to
+       * the `<input is="iron-input">`'s `bindValue`
        * property, or the value property of your input that is `notify:true`.
        */
       value: {
@@ -16940,8 +19489,9 @@ Picker.extend( 'pickadate', DatePicker )
       },
 
       /**
-       * Set to true to disable this input. Bind this to both the `<paper-input-container>`'s
-       * and the input's `disabled` property.
+       * Set to true to disable this input. If you're using PaperInputBehavior to
+       * implement your own paper-input-like element, bind this to
+       * both the `<paper-input-container>`'s and the input's `disabled` property.
        */
       disabled: {
         type: Boolean,
@@ -16949,57 +19499,69 @@ Picker.extend( 'pickadate', DatePicker )
       },
 
       /**
-       * Returns true if the value is invalid. Bind this to both the `<paper-input-container>`'s
-       * and the input's `invalid` property.
+       * Returns true if the value is invalid. If you're using PaperInputBehavior to
+       * implement your own paper-input-like element, bind this to both the
+       * `<paper-input-container>`'s and the input's `invalid` property.
+       *
+       * If `autoValidate` is true, the `invalid` attribute is managed automatically,
+       * which can clobber attempts to manage it manually.
        */
       invalid: {
         type: Boolean,
-        value: false
+        value: false,
+        notify: true
       },
 
       /**
-       * Set to true to prevent the user from entering invalid input. Bind this to the
-       * `<input is="iron-input">`'s `preventInvalidInput` property.
+       * Set to true to prevent the user from entering invalid input. If you're
+       * using PaperInputBehavior to  implement your own paper-input-like element,
+       * bind this to `<input is="iron-input">`'s `preventInvalidInput` property.
        */
       preventInvalidInput: {
         type: Boolean
       },
 
       /**
-       * Set this to specify the pattern allowed by `preventInvalidInput`. Bind this to the
-       * `<input is="iron-input">`'s `allowedPattern` property.
+       * Set this to specify the pattern allowed by `preventInvalidInput`. If
+       * you're using PaperInputBehavior to implement your own paper-input-like
+       * element, bind this to the `<input is="iron-input">`'s `allowedPattern`
+       * property.
        */
       allowedPattern: {
         type: String
       },
 
       /**
-       * The type of the input. The supported types are `text`, `number` and `password`. Bind this
-       * to the `<input is="iron-input">`'s `type` property.
+       * The type of the input. The supported types are `text`, `number` and `password`.
+       * If you're using PaperInputBehavior to implement your own paper-input-like element,
+       * bind this to the `<input is="iron-input">`'s `type` property.
        */
       type: {
         type: String
       },
 
       /**
-       * The datalist of the input (if any). This should match the id of an existing <datalist>. Bind this
-       * to the `<input is="iron-input">`'s `list` property.
+       * The datalist of the input (if any). This should match the id of an existing `<datalist>`.
+       * If you're using PaperInputBehavior to implement your own paper-input-like
+       * element, bind this to the `<input is="iron-input">`'s `list` property.
        */
       list: {
         type: String
       },
 
       /**
-       * A pattern to validate the `input` with. Bind this to the `<input is="iron-input">`'s
-       * `pattern` property.
+       * A pattern to validate the `input` with. If you're using PaperInputBehavior to
+       * implement your own paper-input-like element, bind this to
+       * the `<input is="iron-input">`'s `pattern` property.
        */
       pattern: {
         type: String
       },
 
       /**
-       * Set to true to mark the input as required. Bind this to the `<input is="iron-input">`'s
-       * `required` property.
+       * Set to true to mark the input as required. If you're using PaperInputBehavior to
+       * implement your own paper-input-like element, bind this to
+       * the `<input is="iron-input">`'s `required` property.
        */
       required: {
         type: Boolean,
@@ -17007,8 +19569,9 @@ Picker.extend( 'pickadate', DatePicker )
       },
 
       /**
-       * The error message to display when the input is invalid. Bind this to the
-       * `<paper-input-error>`'s content, if using.
+       * The error message to display when the input is invalid. If you're using
+       * PaperInputBehavior to implement your own paper-input-like element,
+       * bind this to the `<paper-input-error>`'s content, if using.
        */
       errorMessage: {
         type: String
@@ -17023,8 +19586,9 @@ Picker.extend( 'pickadate', DatePicker )
       },
 
       /**
-       * Set to true to disable the floating label. Bind this to the `<paper-input-container>`'s
-       * `noLabelFloat` property.
+       * Set to true to disable the floating label. If you're using PaperInputBehavior to
+       * implement your own paper-input-like element, bind this to
+       * the `<paper-input-container>`'s `noLabelFloat` property.
        */
       noLabelFloat: {
         type: Boolean,
@@ -17032,8 +19596,9 @@ Picker.extend( 'pickadate', DatePicker )
       },
 
       /**
-       * Set to true to always float the label. Bind this to the `<paper-input-container>`'s
-       * `alwaysFloatLabel` property.
+       * Set to true to always float the label. If you're using PaperInputBehavior to
+       * implement your own paper-input-like element, bind this to
+       * the `<paper-input-container>`'s `alwaysFloatLabel` property.
        */
       alwaysFloatLabel: {
         type: Boolean,
@@ -17041,8 +19606,9 @@ Picker.extend( 'pickadate', DatePicker )
       },
 
       /**
-       * Set to true to auto-validate the input value. Bind this to the `<paper-input-container>`'s
-       * `autoValidate` property.
+       * Set to true to auto-validate the input value. If you're using PaperInputBehavior to
+       * implement your own paper-input-like element, bind this to
+       * the `<paper-input-container>`'s `autoValidate` property.
        */
       autoValidate: {
         type: Boolean,
@@ -17050,8 +19616,9 @@ Picker.extend( 'pickadate', DatePicker )
       },
 
       /**
-       * Name of the validator to use. Bind this to the `<input is="iron-input">`'s `validator`
-       * property.
+       * Name of the validator to use. If you're using PaperInputBehavior to
+       * implement your own paper-input-like element, bind this to
+       * the `<input is="iron-input">`'s `validator` property.
        */
       validator: {
         type: String
@@ -17060,7 +19627,8 @@ Picker.extend( 'pickadate', DatePicker )
       // HTMLInputElement attributes for binding if needed
 
       /**
-       * Bind this to the `<input is="iron-input">`'s `autocomplete` property.
+       * If you're using PaperInputBehavior to implement your own paper-input-like
+       * element, bind this to the `<input is="iron-input">`'s `autocomplete` property.
        */
       autocomplete: {
         type: String,
@@ -17068,29 +19636,35 @@ Picker.extend( 'pickadate', DatePicker )
       },
 
       /**
-       * Bind this to the `<input is="iron-input">`'s `autofocus` property.
+       * If you're using PaperInputBehavior to implement your own paper-input-like
+       * element, bind this to the `<input is="iron-input">`'s `autofocus` property.
        */
       autofocus: {
-        type: Boolean
+        type: Boolean,
+        observer: '_autofocusChanged'
       },
 
       /**
-       * Bind this to the `<input is="iron-input">`'s `inputmode` property.
+       * If you're using PaperInputBehavior to implement your own paper-input-like
+       * element, bind this to the `<input is="iron-input">`'s `inputmode` property.
        */
       inputmode: {
         type: String
       },
 
       /**
-       * Bind this to the `<input is="iron-input">`'s `minlength` property.
+       * The minimum length of the input value.
+       * If you're using PaperInputBehavior to implement your own paper-input-like
+       * element, bind this to the `<input is="iron-input">`'s `minlength` property.
        */
       minlength: {
         type: Number
       },
 
       /**
-       * The maximum length of the input value. Bind this to the `<input is="iron-input">`'s
-       * `maxlength` property.
+       * The maximum length of the input value.
+       * If you're using PaperInputBehavior to implement your own paper-input-like
+       * element, bind this to the `<input is="iron-input">`'s `maxlength` property.
        */
       maxlength: {
         type: Number
@@ -17098,7 +19672,8 @@ Picker.extend( 'pickadate', DatePicker )
 
       /**
        * The minimum (numeric or date-time) input value.
-       * Bind this to the `<input is="iron-input">`'s `min` property.
+       * If you're using PaperInputBehavior to implement your own paper-input-like
+       * element, bind this to the `<input is="iron-input">`'s `min` property.
        */
       min: {
         type: String
@@ -17107,7 +19682,8 @@ Picker.extend( 'pickadate', DatePicker )
       /**
        * The maximum (numeric or date-time) input value.
        * Can be a String (e.g. `"2000-1-1"`) or a Number (e.g. `2`).
-       * Bind this to the `<input is="iron-input">`'s `max` property.
+       * If you're using PaperInputBehavior to implement your own paper-input-like
+       * element, bind this to the `<input is="iron-input">`'s `max` property.
        */
       max: {
         type: String
@@ -17115,14 +19691,16 @@ Picker.extend( 'pickadate', DatePicker )
 
       /**
        * Limits the numeric or date-time increments.
-       * Bind this to the `<input is="iron-input">`'s `step` property.
+       * If you're using PaperInputBehavior to implement your own paper-input-like
+       * element, bind this to the `<input is="iron-input">`'s `step` property.
        */
       step: {
         type: String
       },
 
       /**
-       * Bind this to the `<input is="iron-input">`'s `name` property.
+       * If you're using PaperInputBehavior to implement your own paper-input-like
+       * element, bind this to the `<input is="iron-input">`'s `name` property.
        */
       name: {
         type: String
@@ -17138,7 +19716,8 @@ Picker.extend( 'pickadate', DatePicker )
       },
 
       /**
-       * Bind this to the `<input is="iron-input">`'s `readonly` property.
+       * If you're using PaperInputBehavior to implement your own paper-input-like
+       * element, bind this to the `<input is="iron-input">`'s `readonly` property.
        */
       readonly: {
         type: Boolean,
@@ -17146,7 +19725,8 @@ Picker.extend( 'pickadate', DatePicker )
       },
 
       /**
-       * Bind this to the `<input is="iron-input">`'s `size` property.
+       * If you're using PaperInputBehavior to implement your own paper-input-like
+       * element, bind this to the `<input is="iron-input">`'s `size` property.
        */
       size: {
         type: Number
@@ -17155,7 +19735,8 @@ Picker.extend( 'pickadate', DatePicker )
       // Nonstandard attributes for binding if needed
 
       /**
-       * Bind this to the `<input is="iron-input">`'s `autocapitalize` property.
+       * If you're using PaperInputBehavior to implement your own paper-input-like
+       * element, bind this to the `<input is="iron-input">`'s `autocapitalize` property.
        */
       autocapitalize: {
         type: String,
@@ -17163,14 +19744,56 @@ Picker.extend( 'pickadate', DatePicker )
       },
 
       /**
-       * Bind this to the `<input is="iron-input">`'s `autocorrect` property.
+       * If you're using PaperInputBehavior to implement your own paper-input-like
+       * element, bind this to the `<input is="iron-input">`'s `autocorrect` property.
        */
       autocorrect: {
         type: String,
         value: 'off'
       },
 
+      /**
+       * If you're using PaperInputBehavior to implement your own paper-input-like
+       * element, bind this to the `<input is="iron-input">`'s `autosave` property,
+       * used with type=search.
+       */
+      autosave: {
+        type: String
+      },
+
+      /**
+       * If you're using PaperInputBehavior to implement your own paper-input-like
+       * element, bind this to the `<input is="iron-input">`'s `results` property,
+       * used with type=search.
+       */
+      results: {
+        type: Number
+      },
+
+      /**
+       * If you're using PaperInputBehavior to implement your own paper-input-like
+       * element, bind this to the `<input is="iron-input">`'s `accept` property,
+       * used with type=file.
+       */
+      accept: {
+        type: String
+      },
+
+      /**
+       * If you're using PaperInputBehavior to implement your own paper-input-like
+       * element, bind this to the`<input is="iron-input">`'s `multiple` property,
+       * used with type=file.
+       */
+      multiple: {
+        type: Boolean
+      },
+
       _ariaDescribedBy: {
+        type: String,
+        value: ''
+      },
+
+      _ariaLabelledBy: {
         type: String,
         value: ''
       }
@@ -17178,12 +19801,16 @@ Picker.extend( 'pickadate', DatePicker )
     },
 
     listeners: {
-      'addon-attached': '_onAddonAttached'
+      'addon-attached': '_onAddonAttached',
     },
 
-    observers: [
-      '_focusedControlStateChanged(focused)'
-    ],
+    keyBindings: {
+      'shift+tab:keydown': '_onShiftTabDown'
+    },
+
+    hostAttributes: {
+      tabindex: 0
+    },
 
     /**
      * Returns a reference to the input element.
@@ -17192,8 +19819,27 @@ Picker.extend( 'pickadate', DatePicker )
       return this.$.input;
     },
 
+    /**
+     * Returns a reference to the focusable element.
+     */
+    get _focusableElement() {
+      return this.inputElement;
+    },
+
+    registered: function() {
+      // These types have some default placeholder text; overlapping
+      // the label on top of it looks terrible. Auto-float the label in this case.
+      this._typesThatHaveText = ["date", "datetime", "datetime-local", "month",
+          "time", "week", "file"];
+    },
+
     attached: function() {
       this._updateAriaLabelledBy();
+
+      if (this.inputElement &&
+          this._typesThatHaveText.indexOf(this.inputElement.type) !== -1) {
+        this.alwaysFloatLabel = true;
+      }
     },
 
     _appendStringWithSpace: function(str, more) {
@@ -17210,7 +19856,7 @@ Picker.extend( 'pickadate', DatePicker )
       if (target.id) {
         this._ariaDescribedBy = this._appendStringWithSpace(this._ariaDescribedBy, target.id);
       } else {
-        var id = 'paper-input-add-on-' + Math.floor((Math.random() * 100000));
+        var id = 'paper-input-add-on-' + Polymer.PaperInputHelper.NextAddonID++;
         target.id = id;
         this._ariaDescribedBy = this._appendStringWithSpace(this._ariaDescribedBy, id);
       }
@@ -17223,6 +19869,32 @@ Picker.extend( 'pickadate', DatePicker )
      */
     validate: function() {
       return this.inputElement.validate();
+    },
+
+    /**
+     * Forward focus to inputElement. Overriden from IronControlState.
+     */
+    _focusBlurHandler: function(event) {
+      Polymer.IronControlState._focusBlurHandler.call(this, event);
+
+      // Forward the focus to the nested input.
+      if (this.focused && !this._shiftTabPressed)
+        this._focusableElement.focus();
+    },
+
+    /**
+     * Handler that is called when a shift+tab keypress is detected by the menu.
+     *
+     * @param {CustomEvent} event A key combination event.
+     */
+    _onShiftTabDown: function(event) {
+      var oldTabIndex = this.getAttribute('tabindex');
+      this._shiftTabPressed = true;
+      this.setAttribute('tabindex', '-1');
+      this.async(function() {
+        this.setAttribute('tabindex', oldTabIndex);
+        this._shiftTabPressed = false;
+      }, 1);
     },
 
     /**
@@ -17259,24 +19931,6 @@ Picker.extend( 'pickadate', DatePicker )
       return placeholder || alwaysFloatLabel;
     },
 
-    _focusedControlStateChanged: function(focused) {
-      // IronControlState stops the focus and blur events in order to redispatch them on the host
-      // element, but paper-input-container listens to those events. Since there are more
-      // pending work on focus/blur in IronControlState, I'm putting in this hack to get the
-      // input focus state working for now.
-      if (!this.$.container) {
-        this.$.container = Polymer.dom(this.root).querySelector('paper-input-container');
-        if (!this.$.container) {
-          return;
-        }
-      }
-      if (focused) {
-        this.$.container._onFocus();
-      } else {
-        this.$.container._onBlur();
-      }
-    },
-
     _updateAriaLabelledBy: function() {
       var label = Polymer.dom(this.root).querySelector('label');
       if (!label) {
@@ -17287,16 +19941,59 @@ Picker.extend( 'pickadate', DatePicker )
       if (label.id) {
         labelledBy = label.id;
       } else {
-        labelledBy = 'paper-input-label-' + new Date().getUTCMilliseconds();
+        labelledBy = 'paper-input-label-' + Polymer.PaperInputHelper.NextLabelID++;
         label.id = labelledBy;
       }
       this._ariaLabelledBy = labelledBy;
-    }
+    },
 
-  };
+    _onChange:function(event) {
+      // In the Shadow DOM, the `change` event is not leaked into the
+      // ancestor tree, so we must do this manually.
+      // See https://w3c.github.io/webcomponents/spec/shadow/#events-that-are-not-leaked-into-ancestor-trees.
+      if (this.shadowRoot) {
+        this.fire(event.type, {sourceEvent: event}, {
+          node: this,
+          bubbles: event.bubbles,
+          cancelable: event.cancelable
+        });
+      }
+    },
+
+    _autofocusChanged: function() {
+      // Firefox doesn't respect the autofocus attribute if it's applied after
+      // the page is loaded (Chrome/WebKit do respect it), preventing an
+      // autofocus attribute specified in markup from taking effect when the
+      // element is upgraded. As a workaround, if the autofocus property is set,
+      // and the focus hasn't already been moved elsewhere, we take focus.
+      if (this.autofocus && this._focusableElement) {
+
+        // In IE 11, the default document.activeElement can be the page's
+        // outermost html element, but there are also cases (under the
+        // polyfill?) in which the activeElement is not a real HTMLElement, but
+        // just a plain object. We identify the latter case as having no valid
+        // activeElement.
+        var activeElement = document.activeElement;
+        var isActiveElementValid = activeElement instanceof HTMLElement;
+
+        // Has some other element has already taken the focus?
+        var isSomeElementActive = isActiveElementValid &&
+            activeElement !== document.body &&
+            activeElement !== document.documentElement; /* IE 11 */
+        if (!isSomeElementActive) {
+          // No specific element has taken the focus yet, so we can take it.
+          this._focusableElement.focus();
+        }
+      }
+    }
+  }
 
   /** @polymerBehavior */
-  Polymer.PaperInputBehavior = [Polymer.IronControlState, Polymer.PaperInputBehaviorImpl];
+  Polymer.PaperInputBehavior = [
+    Polymer.IronControlState,
+    Polymer.IronA11yKeysBehavior,
+    Polymer.PaperInputBehaviorImpl
+  ];
 Polymer({
     is: 't-calendar',
 
@@ -17587,978 +20284,6 @@ Polymer({
     }
 
 });
-/**
-   * @demo demo/index.html
-   * @polymerBehavior Polymer.IronButtonState
-   */
-  Polymer.IronButtonStateImpl = {
-
-    properties: {
-
-      /**
-       * If true, the user is currently holding down the button.
-       */
-      pressed: {
-        type: Boolean,
-        readOnly: true,
-        value: false,
-        reflectToAttribute: true,
-        observer: '_pressedChanged'
-      },
-
-      /**
-       * If true, the button toggles the active state with each tap or press
-       * of the spacebar.
-       */
-      toggles: {
-        type: Boolean,
-        value: false,
-        reflectToAttribute: true
-      },
-
-      /**
-       * If true, the button is a toggle and is currently in the active state.
-       */
-      active: {
-        type: Boolean,
-        value: false,
-        notify: true,
-        reflectToAttribute: true
-      },
-
-      /**
-       * True if the element is currently being pressed by a "pointer," which
-       * is loosely defined as mouse or touch input (but specifically excluding
-       * keyboard input).
-       */
-      pointerDown: {
-        type: Boolean,
-        readOnly: true,
-        value: false
-      },
-
-      /**
-       * True if the input device that caused the element to receive focus
-       * was a keyboard.
-       */
-      receivedFocusFromKeyboard: {
-        type: Boolean,
-        readOnly: true
-      },
-
-      /**
-       * The aria attribute to be set if the button is a toggle and in the
-       * active state.
-       */
-      ariaActiveAttribute: {
-        type: String,
-        value: 'aria-pressed',
-        observer: '_ariaActiveAttributeChanged'
-      }
-    },
-
-    listeners: {
-      down: '_downHandler',
-      up: '_upHandler',
-      tap: '_tapHandler'
-    },
-
-    observers: [
-      '_detectKeyboardFocus(focused)',
-      '_activeChanged(active, ariaActiveAttribute)'
-    ],
-
-    keyBindings: {
-      'enter:keydown': '_asyncClick',
-      'space:keydown': '_spaceKeyDownHandler',
-      'space:keyup': '_spaceKeyUpHandler',
-    },
-
-    _mouseEventRe: /^mouse/,
-
-    _tapHandler: function() {
-      if (this.toggles) {
-       // a tap is needed to toggle the active state
-        this._userActivate(!this.active);
-      } else {
-        this.active = false;
-      }
-    },
-
-    _detectKeyboardFocus: function(focused) {
-      this._setReceivedFocusFromKeyboard(!this.pointerDown && focused);
-    },
-
-    // to emulate native checkbox, (de-)activations from a user interaction fire
-    // 'change' events
-    _userActivate: function(active) {
-      if (this.active !== active) {
-        this.active = active;
-        this.fire('change');
-      }
-    },
-
-    _eventSourceIsPrimaryInput: function(event) {
-      event = event.detail.sourceEvent || event;
-
-      // Always true for non-mouse events....
-      if (!this._mouseEventRe.test(event.type)) {
-        return true;
-      }
-
-      // http://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/buttons
-      if ('buttons' in event) {
-        return event.buttons === 1;
-      }
-
-      // http://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/which
-      if (typeof event.which === 'number') {
-        return event.which < 2;
-      }
-
-      // http://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/button
-      return event.button < 1;
-    },
-
-    _downHandler: function(event) {
-      if (!this._eventSourceIsPrimaryInput(event)) {
-        return;
-      }
-
-      this._setPointerDown(true);
-      this._setPressed(true);
-      this._setReceivedFocusFromKeyboard(false);
-    },
-
-    _upHandler: function() {
-      this._setPointerDown(false);
-      this._setPressed(false);
-    },
-
-    _spaceKeyDownHandler: function(event) {
-      var keyboardEvent = event.detail.keyboardEvent;
-      keyboardEvent.preventDefault();
-      keyboardEvent.stopImmediatePropagation();
-      this._setPressed(true);
-    },
-
-    _spaceKeyUpHandler: function() {
-      if (this.pressed) {
-        this._asyncClick();
-      }
-      this._setPressed(false);
-    },
-
-    // trigger click asynchronously, the asynchrony is useful to allow one
-    // event handler to unwind before triggering another event
-    _asyncClick: function() {
-      this.async(function() {
-        this.click();
-      }, 1);
-    },
-
-    // any of these changes are considered a change to button state
-
-    _pressedChanged: function(pressed) {
-      this._changedButtonState();
-    },
-
-    _ariaActiveAttributeChanged: function(value, oldValue) {
-      if (oldValue && oldValue != value && this.hasAttribute(oldValue)) {
-        this.removeAttribute(oldValue);
-      }
-    },
-
-    _activeChanged: function(active, ariaActiveAttribute) {
-      if (this.toggles) {
-        this.setAttribute(this.ariaActiveAttribute,
-                          active ? 'true' : 'false');
-      } else {
-        this.removeAttribute(this.ariaActiveAttribute);
-      }
-      this._changedButtonState();
-    },
-
-    _controlStateChanged: function() {
-      if (this.disabled) {
-        this._setPressed(false);
-      } else {
-        this._changedButtonState();
-      }
-    },
-
-    // provide hook for follow-on behaviors to react to button-state
-
-    _changedButtonState: function() {
-      if (this._buttonStateChanged) {
-        this._buttonStateChanged(); // abstract
-      }
-    }
-
-  };
-
-  /** @polymerBehavior */
-  Polymer.IronButtonState = [
-    Polymer.IronA11yKeysBehavior,
-    Polymer.IronButtonStateImpl
-  ];
-(function() {
-    var Utility = {
-      cssColorWithAlpha: function(cssColor, alpha) {
-        var parts = cssColor.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
-
-        if (typeof alpha == 'undefined') {
-          alpha = 1;
-        }
-
-        if (!parts) {
-          return 'rgba(255, 255, 255, ' + alpha + ')';
-        }
-
-        return 'rgba(' + parts[1] + ', ' + parts[2] + ', ' + parts[3] + ', ' + alpha + ')';
-      },
-
-      distance: function(x1, y1, x2, y2) {
-        var xDelta = (x1 - x2);
-        var yDelta = (y1 - y2);
-
-        return Math.sqrt(xDelta * xDelta + yDelta * yDelta);
-      },
-
-      now: (function() {
-        if (window.performance && window.performance.now) {
-          return window.performance.now.bind(window.performance);
-        }
-
-        return Date.now;
-      })()
-    };
-
-    /**
-     * @param {HTMLElement} element
-     * @constructor
-     */
-    function ElementMetrics(element) {
-      this.element = element;
-      this.width = this.boundingRect.width;
-      this.height = this.boundingRect.height;
-
-      this.size = Math.max(this.width, this.height);
-    }
-
-    ElementMetrics.prototype = {
-      get boundingRect () {
-        return this.element.getBoundingClientRect();
-      },
-
-      furthestCornerDistanceFrom: function(x, y) {
-        var topLeft = Utility.distance(x, y, 0, 0);
-        var topRight = Utility.distance(x, y, this.width, 0);
-        var bottomLeft = Utility.distance(x, y, 0, this.height);
-        var bottomRight = Utility.distance(x, y, this.width, this.height);
-
-        return Math.max(topLeft, topRight, bottomLeft, bottomRight);
-      }
-    };
-
-    /**
-     * @param {HTMLElement} element
-     * @constructor
-     */
-    function Ripple(element) {
-      this.element = element;
-      this.color = window.getComputedStyle(element).color;
-
-      this.wave = document.createElement('div');
-      this.waveContainer = document.createElement('div');
-      this.wave.style.backgroundColor = this.color;
-      this.wave.classList.add('wave');
-      this.waveContainer.classList.add('wave-container');
-      Polymer.dom(this.waveContainer).appendChild(this.wave);
-
-      this.resetInteractionState();
-    }
-
-    Ripple.MAX_RADIUS = 300;
-
-    Ripple.prototype = {
-      get recenters() {
-        return this.element.recenters;
-      },
-
-      get center() {
-        return this.element.center;
-      },
-
-      get mouseDownElapsed() {
-        var elapsed;
-
-        if (!this.mouseDownStart) {
-          return 0;
-        }
-
-        elapsed = Utility.now() - this.mouseDownStart;
-
-        if (this.mouseUpStart) {
-          elapsed -= this.mouseUpElapsed;
-        }
-
-        return elapsed;
-      },
-
-      get mouseUpElapsed() {
-        return this.mouseUpStart ?
-          Utility.now () - this.mouseUpStart : 0;
-      },
-
-      get mouseDownElapsedSeconds() {
-        return this.mouseDownElapsed / 1000;
-      },
-
-      get mouseUpElapsedSeconds() {
-        return this.mouseUpElapsed / 1000;
-      },
-
-      get mouseInteractionSeconds() {
-        return this.mouseDownElapsedSeconds + this.mouseUpElapsedSeconds;
-      },
-
-      get initialOpacity() {
-        return this.element.initialOpacity;
-      },
-
-      get opacityDecayVelocity() {
-        return this.element.opacityDecayVelocity;
-      },
-
-      get radius() {
-        var width2 = this.containerMetrics.width * this.containerMetrics.width;
-        var height2 = this.containerMetrics.height * this.containerMetrics.height;
-        var waveRadius = Math.min(
-          Math.sqrt(width2 + height2),
-          Ripple.MAX_RADIUS
-        ) * 1.1 + 5;
-
-        var duration = 1.1 - 0.2 * (waveRadius / Ripple.MAX_RADIUS);
-        var timeNow = this.mouseInteractionSeconds / duration;
-        var size = waveRadius * (1 - Math.pow(80, -timeNow));
-
-        return Math.abs(size);
-      },
-
-      get opacity() {
-        if (!this.mouseUpStart) {
-          return this.initialOpacity;
-        }
-
-        return Math.max(
-          0,
-          this.initialOpacity - this.mouseUpElapsedSeconds * this.opacityDecayVelocity
-        );
-      },
-
-      get outerOpacity() {
-        // Linear increase in background opacity, capped at the opacity
-        // of the wavefront (waveOpacity).
-        var outerOpacity = this.mouseUpElapsedSeconds * 0.3;
-        var waveOpacity = this.opacity;
-
-        return Math.max(
-          0,
-          Math.min(outerOpacity, waveOpacity)
-        );
-      },
-
-      get isOpacityFullyDecayed() {
-        return this.opacity < 0.01 &&
-          this.radius >= Math.min(this.maxRadius, Ripple.MAX_RADIUS);
-      },
-
-      get isRestingAtMaxRadius() {
-        return this.opacity >= this.initialOpacity &&
-          this.radius >= Math.min(this.maxRadius, Ripple.MAX_RADIUS);
-      },
-
-      get isAnimationComplete() {
-        return this.mouseUpStart ?
-          this.isOpacityFullyDecayed : this.isRestingAtMaxRadius;
-      },
-
-      get translationFraction() {
-        return Math.min(
-          1,
-          this.radius / this.containerMetrics.size * 2 / Math.sqrt(2)
-        );
-      },
-
-      get xNow() {
-        if (this.xEnd) {
-          return this.xStart + this.translationFraction * (this.xEnd - this.xStart);
-        }
-
-        return this.xStart;
-      },
-
-      get yNow() {
-        if (this.yEnd) {
-          return this.yStart + this.translationFraction * (this.yEnd - this.yStart);
-        }
-
-        return this.yStart;
-      },
-
-      get isMouseDown() {
-        return this.mouseDownStart && !this.mouseUpStart;
-      },
-
-      resetInteractionState: function() {
-        this.maxRadius = 0;
-        this.mouseDownStart = 0;
-        this.mouseUpStart = 0;
-
-        this.xStart = 0;
-        this.yStart = 0;
-        this.xEnd = 0;
-        this.yEnd = 0;
-        this.slideDistance = 0;
-
-        this.containerMetrics = new ElementMetrics(this.element);
-      },
-
-      draw: function() {
-        var scale;
-        var translateString;
-        var dx;
-        var dy;
-
-        this.wave.style.opacity = this.opacity;
-
-        scale = this.radius / (this.containerMetrics.size / 2);
-        dx = this.xNow - (this.containerMetrics.width / 2);
-        dy = this.yNow - (this.containerMetrics.height / 2);
-
-
-        // 2d transform for safari because of border-radius and overflow:hidden clipping bug.
-        // https://bugs.webkit.org/show_bug.cgi?id=98538
-        this.waveContainer.style.webkitTransform = 'translate(' + dx + 'px, ' + dy + 'px)';
-        this.waveContainer.style.transform = 'translate3d(' + dx + 'px, ' + dy + 'px, 0)';
-        this.wave.style.webkitTransform = 'scale(' + scale + ',' + scale + ')';
-        this.wave.style.transform = 'scale3d(' + scale + ',' + scale + ',1)';
-      },
-
-      /** @param {Event=} event */
-      downAction: function(event) {
-        var xCenter = this.containerMetrics.width / 2;
-        var yCenter = this.containerMetrics.height / 2;
-
-        this.resetInteractionState();
-        this.mouseDownStart = Utility.now();
-
-        if (this.center) {
-          this.xStart = xCenter;
-          this.yStart = yCenter;
-          this.slideDistance = Utility.distance(
-            this.xStart, this.yStart, this.xEnd, this.yEnd
-          );
-        } else {
-          this.xStart = event ?
-              event.detail.x - this.containerMetrics.boundingRect.left :
-              this.containerMetrics.width / 2;
-          this.yStart = event ?
-              event.detail.y - this.containerMetrics.boundingRect.top :
-              this.containerMetrics.height / 2;
-        }
-
-        if (this.recenters) {
-          this.xEnd = xCenter;
-          this.yEnd = yCenter;
-          this.slideDistance = Utility.distance(
-            this.xStart, this.yStart, this.xEnd, this.yEnd
-          );
-        }
-
-        this.maxRadius = this.containerMetrics.furthestCornerDistanceFrom(
-          this.xStart,
-          this.yStart
-        );
-
-        this.waveContainer.style.top =
-          (this.containerMetrics.height - this.containerMetrics.size) / 2 + 'px';
-        this.waveContainer.style.left =
-          (this.containerMetrics.width - this.containerMetrics.size) / 2 + 'px';
-
-        this.waveContainer.style.width = this.containerMetrics.size + 'px';
-        this.waveContainer.style.height = this.containerMetrics.size + 'px';
-      },
-
-      /** @param {Event=} event */
-      upAction: function(event) {
-        if (!this.isMouseDown) {
-          return;
-        }
-
-        this.mouseUpStart = Utility.now();
-      },
-
-      remove: function() {
-        Polymer.dom(this.waveContainer.parentNode).removeChild(
-          this.waveContainer
-        );
-      }
-    };
-
-    Polymer({
-      is: 'paper-ripple',
-
-      behaviors: [
-        Polymer.IronA11yKeysBehavior
-      ],
-
-      properties: {
-        /**
-         * The initial opacity set on the wave.
-         *
-         * @attribute initialOpacity
-         * @type number
-         * @default 0.25
-         */
-        initialOpacity: {
-          type: Number,
-          value: 0.25
-        },
-
-        /**
-         * How fast (opacity per second) the wave fades out.
-         *
-         * @attribute opacityDecayVelocity
-         * @type number
-         * @default 0.8
-         */
-        opacityDecayVelocity: {
-          type: Number,
-          value: 0.8
-        },
-
-        /**
-         * If true, ripples will exhibit a gravitational pull towards
-         * the center of their container as they fade away.
-         *
-         * @attribute recenters
-         * @type boolean
-         * @default false
-         */
-        recenters: {
-          type: Boolean,
-          value: false
-        },
-
-        /**
-         * If true, ripples will center inside its container
-         *
-         * @attribute recenters
-         * @type boolean
-         * @default false
-         */
-        center: {
-          type: Boolean,
-          value: false
-        },
-
-        /**
-         * A list of the visual ripples.
-         *
-         * @attribute ripples
-         * @type Array
-         * @default []
-         */
-        ripples: {
-          type: Array,
-          value: function() {
-            return [];
-          }
-        },
-
-        /**
-         * True when there are visible ripples animating within the
-         * element.
-         */
-        animating: {
-          type: Boolean,
-          readOnly: true,
-          reflectToAttribute: true,
-          value: false
-        },
-
-        /**
-         * If true, the ripple will remain in the "down" state until `holdDown`
-         * is set to false again.
-         */
-        holdDown: {
-          type: Boolean,
-          value: false,
-          observer: '_holdDownChanged'
-        },
-
-        _animating: {
-          type: Boolean
-        },
-
-        _boundAnimate: {
-          type: Function,
-          value: function() {
-            return this.animate.bind(this);
-          }
-        }
-      },
-
-      get target () {
-        var ownerRoot = Polymer.dom(this).getOwnerRoot();
-        var target;
-
-        if (this.parentNode.nodeType == 11) { // DOCUMENT_FRAGMENT_NODE
-          target = ownerRoot.host;
-        } else {
-          target = this.parentNode;
-        }
-
-        return target;
-      },
-
-      keyBindings: {
-        'enter:keydown': '_onEnterKeydown',
-        'space:keydown': '_onSpaceKeydown',
-        'space:keyup': '_onSpaceKeyup'
-      },
-
-      attached: function() {
-        this.listen(this.target, 'up', 'upAction');
-        this.listen(this.target, 'down', 'downAction');
-
-        if (!this.target.hasAttribute('noink')) {
-          this.keyEventTarget = this.target;
-        }
-      },
-
-      get shouldKeepAnimating () {
-        for (var index = 0; index < this.ripples.length; ++index) {
-          if (!this.ripples[index].isAnimationComplete) {
-            return true;
-          }
-        }
-
-        return false;
-      },
-
-      simulatedRipple: function() {
-        this.downAction(null);
-
-        // Please see polymer/polymer#1305
-        this.async(function() {
-          this.upAction();
-        }, 1);
-      },
-
-      /** @param {Event=} event */
-      downAction: function(event) {
-        if (this.holdDown && this.ripples.length > 0) {
-          return;
-        }
-
-        var ripple = this.addRipple();
-
-        ripple.downAction(event);
-
-        if (!this._animating) {
-          this.animate();
-        }
-      },
-
-      /** @param {Event=} event */
-      upAction: function(event) {
-        if (this.holdDown) {
-          return;
-        }
-
-        this.ripples.forEach(function(ripple) {
-          ripple.upAction(event);
-        });
-
-        this.animate();
-      },
-
-      onAnimationComplete: function() {
-        this._animating = false;
-        this.$.background.style.backgroundColor = null;
-        this.fire('transitionend');
-      },
-
-      addRipple: function() {
-        var ripple = new Ripple(this);
-
-        Polymer.dom(this.$.waves).appendChild(ripple.waveContainer);
-        this.$.background.style.backgroundColor = ripple.color;
-        this.ripples.push(ripple);
-
-        this._setAnimating(true);
-
-        return ripple;
-      },
-
-      removeRipple: function(ripple) {
-        var rippleIndex = this.ripples.indexOf(ripple);
-
-        if (rippleIndex < 0) {
-          return;
-        }
-
-        this.ripples.splice(rippleIndex, 1);
-
-        ripple.remove();
-
-        if (!this.ripples.length) {
-          this._setAnimating(false);
-        }
-      },
-
-      animate: function() {
-        var index;
-        var ripple;
-
-        this._animating = true;
-
-        for (index = 0; index < this.ripples.length; ++index) {
-          ripple = this.ripples[index];
-
-          ripple.draw();
-
-          this.$.background.style.opacity = ripple.outerOpacity;
-
-          if (ripple.isOpacityFullyDecayed && !ripple.isRestingAtMaxRadius) {
-            this.removeRipple(ripple);
-          }
-        }
-
-        if (!this.shouldKeepAnimating && this.ripples.length === 0) {
-          this.onAnimationComplete();
-        } else {
-          window.requestAnimationFrame(this._boundAnimate);
-        }
-      },
-
-      _onEnterKeydown: function() {
-        this.downAction();
-        this.async(this.upAction, 1);
-      },
-
-      _onSpaceKeydown: function() {
-        this.downAction();
-      },
-
-      _onSpaceKeyup: function() {
-        this.upAction();
-      },
-
-      _holdDownChanged: function(holdDown) {
-        if (holdDown) {
-          this.downAction();
-        } else {
-          this.upAction();
-        }
-      }
-    });
-  })();
-/**
-   * `Polymer.PaperRippleBehavior` dynamically implements a ripple
-   * when the element has focus via pointer or keyboard.
-   *
-   * NOTE: This behavior is intended to be used in conjunction with and after
-   * `Polymer.IronButtonState` and `Polymer.IronControlState`.
-   *
-   * @polymerBehavior Polymer.PaperRippleBehavior
-   */
-  Polymer.PaperRippleBehavior = {
-    properties: {
-      /**
-       * If true, the element will not produce a ripple effect when interacted
-       * with via the pointer.
-       */
-      noink: {
-        type: Boolean,
-        observer: '_noinkChanged'
-      },
-
-      /**
-       * @type {Element|undefined}
-       */
-      _rippleContainer: {
-        type: Object,
-      }
-    },
-
-    /**
-     * Ensures a `<paper-ripple>` element is available when the element is
-     * focused.
-     */
-    _buttonStateChanged: function() {
-      if (this.focused) {
-        this.ensureRipple();
-      }
-    },
-
-    /**
-     * In addition to the functionality provided in `IronButtonState`, ensures
-     * a ripple effect is created when the element is in a `pressed` state.
-     */
-    _downHandler: function(event) {
-      Polymer.IronButtonStateImpl._downHandler.call(this, event);
-      if (this.pressed) {
-        this.ensureRipple(event);
-      }
-    },
-
-    /**
-     * Ensures this element contains a ripple effect. For startup efficiency
-     * the ripple effect is dynamically on demand when needed.
-     * @param {!Event=} optTriggeringEvent (optional) event that triggered the
-     * ripple.
-     */
-    ensureRipple: function(optTriggeringEvent) {
-      if (!this.hasRipple()) {
-        this._ripple = this._createRipple();
-        this._ripple.noink = this.noink;
-        var rippleContainer = this._rippleContainer || this.root;
-        if (rippleContainer) {
-          Polymer.dom(rippleContainer).appendChild(this._ripple);
-        }
-        if (optTriggeringEvent) {
-          // Check if the event happened inside of the ripple container
-          // Fall back to host instead of the root because distributed text
-          // nodes are not valid event targets
-          var domContainer = Polymer.dom(this._rippleContainer || this);
-          var target = Polymer.dom(optTriggeringEvent).rootTarget;
-          if (domContainer.deepContains( /** @type {Node} */(target))) {
-            this._ripple.uiDownAction(optTriggeringEvent);
-          }
-        }
-      }
-    },
-
-    /**
-     * Returns the `<paper-ripple>` element used by this element to create
-     * ripple effects. The element's ripple is created on demand, when
-     * necessary, and calling this method will force the
-     * ripple to be created.
-     */
-    getRipple: function() {
-      this.ensureRipple();
-      return this._ripple;
-    },
-
-    /**
-     * Returns true if this element currently contains a ripple effect.
-     * @return {boolean}
-     */
-    hasRipple: function() {
-      return Boolean(this._ripple);
-    },
-
-    /**
-     * Create the element's ripple effect via creating a `<paper-ripple>`.
-     * Override this method to customize the ripple element.
-     * @return {!PaperRippleElement} Returns a `<paper-ripple>` element.
-     */
-    _createRipple: function() {
-      return /** @type {!PaperRippleElement} */ (
-          document.createElement('paper-ripple'));
-    },
-
-    _noinkChanged: function(noink) {
-      if (this.hasRipple()) {
-        this._ripple.noink = noink;
-      }
-    }
-  };
-/** @polymerBehavior Polymer.PaperButtonBehavior */
-  Polymer.PaperButtonBehaviorImpl = {
-    properties: {
-      /**
-       * The z-depth of this element, from 0-5. Setting to 0 will remove the
-       * shadow, and each increasing number greater than 0 will be "deeper"
-       * than the last.
-       *
-       * @attribute elevation
-       * @type number
-       * @default 1
-       */
-      elevation: {
-        type: Number,
-        reflectToAttribute: true,
-        readOnly: true
-      }
-    },
-
-    observers: [
-      '_calculateElevation(focused, disabled, active, pressed, receivedFocusFromKeyboard)',
-      '_computeKeyboardClass(receivedFocusFromKeyboard)'
-    ],
-
-    hostAttributes: {
-      role: 'button',
-      tabindex: '0',
-      animated: true
-    },
-
-    _calculateElevation: function() {
-      var e = 1;
-      if (this.disabled) {
-        e = 0;
-      } else if (this.active || this.pressed) {
-        e = 4;
-      } else if (this.receivedFocusFromKeyboard) {
-        e = 3;
-      }
-      this._setElevation(e);
-    },
-
-    _computeKeyboardClass: function(receivedFocusFromKeyboard) {
-      this.toggleClass('keyboard-focus', receivedFocusFromKeyboard);
-    },
-
-    /**
-     * In addition to `IronButtonState` behavior, when space key goes down,
-     * create a ripple down effect.
-     *
-     * @param {!KeyboardEvent} event .
-     */
-    _spaceKeyDownHandler: function(event) {
-      Polymer.IronButtonStateImpl._spaceKeyDownHandler.call(this, event);
-      // Ensure that there is at most one ripple when the space key is held down.
-      if (this.hasRipple() && this.getRipple().ripples.length < 1) {
-        this._ripple.uiDownAction();
-      }
-    },
-
-    /**
-     * In addition to `IronButtonState` behavior, when space key goes up,
-     * create a ripple up effect.
-     *
-     * @param {!KeyboardEvent} event .
-     */
-    _spaceKeyUpHandler: function(event) {
-      Polymer.IronButtonStateImpl._spaceKeyUpHandler.call(this, event);
-      if (this.hasRipple()) {
-        this._ripple.uiUpAction();
-      }
-    }
-  };
-
-  /** @polymerBehavior */
-  Polymer.PaperButtonBehavior = [
-    Polymer.IronButtonState,
-    Polymer.IronControlState,
-    Polymer.PaperRippleBehavior,
-    Polymer.PaperButtonBehaviorImpl
-  ];
 Polymer({
       is: 'paper-button',
 
@@ -18794,7 +20519,8 @@ Polymer({
         singularLabel:{
           type: String,
           value:'',
-          reflectToAttribute : true
+          reflectToAttribute : true,
+          observer:'_setLabel'
         },
 
         _label:{
@@ -18805,12 +20531,15 @@ Polymer({
         pluralLabel:{
           type: String,
           value:'',
-          reflectToAttribute : true
+          reflectToAttribute : true,
+          observer:'_setLabel'
         },
+
         secondaryLabel:{
           type: String,
           value:'',
-          reflectToAttribute : true
+          reflectToAttribute : true,
+          observer:'_setLabel'
         },
 
         min:{
@@ -18900,20 +20629,14 @@ Polymer({
     },
 
     addTap:function(){
-      if(this.count < this.max)
-      {
+      if(this.count < this.max) {
         this.count++;
-        this._setLabel();
-        this.fire('count-change');
       }    
     },
 
     minusTap:function(){
-      if(this.count > this.min)
-      {
+      if(this.count > this.min) {
         this.count--;
-        this._setLabel();
-        this.fire('count-change');
       }
     },
 
@@ -18928,8 +20651,6 @@ Polymer({
             default :
                 this._label = this.pluralLabel;
         }
-        
-       
     },
 
     checkDisableMinus:function(count,min){
@@ -19229,11 +20950,67 @@ Polymer({
     }
 
 });
+TravelNxt = window.TravelNxt || {};
+TravelNxt.Behaviors = TravelNxt.Behaviors || {};
+/*
+@polymerBehavior 
+*/
+TravelNxt.Behaviors.FormBehavior = {
+
+    properties: {
+          /**
+            * Used to show text when the searching is in progress
+            */
+          productName: {    
+            type: String
+          }
+    },
+
+    /*
+     * <p>The validate function will call validate method of all the required fields</p>
+    */
+    validate: function() {
+        var check = true;
+        var requiredFields = this.querySelectorAll('[required]');
+        for (var i = 0; i < requiredFields.length; i++) {
+            if (!requiredFields[i].validate()) {
+                check = false;
+            }
+        }
+        return check;
+    },
+
+    /*
+     * <p>Pass true/false as parameter of the method to show the loading state of the button of the form</p>
+     * <p>It disables the button and chage the text of the button of the search page.</p>
+    */
+    showProgress: function(inProgress) {
+        if (inProgress) {
+            this.$.search.label = 'Searching ' + this.productName + 's...';
+            this.$.search.disabled = true;
+        } else {
+            this.$.search.label = 'Search ' + this.productName + 's';
+            this.$.search.disabled = false;
+        }
+    }
+
+};
 Polymer({
 
     is: 't-hotel-search',
 
+    /*
+     * <p>Behaviour to validate forms and other.</p>
+     */
+    behaviors: [TravelNxt.Behaviors.FormBehavior],
+
     properties: {
+        /**
+        * Fired when the hotel search is validated when all the fields are filled.
+        *
+        * @event t-hotel-search-validate
+        */ 
+
 
         /* *
          * The location to search from.
@@ -19291,12 +21068,23 @@ Polymer({
             }
         },
 
+        /**
+         * The product name to be used in the t-form-behavior
+         */
+        productName: {
+          type: String,
+          value: 'HOTEL'
+        }
     },
 
 
     attached: function() {
         //this._checkAndSubscribeProvider();
         this._checkInChanged();
+    },
+
+    _checkChild: function(number){
+        return number > 0; 
     },
 
     /**
@@ -19332,9 +21120,11 @@ Polymer({
     _checkInChanged: function() {
         setTimeout(function() {
             if (this.checkIn != '') {
-                var nextDay = new Date(this.checkIn).setDate(new Date(this.checkIn).getDate() + 1)
+                var nextDay = new Date(this.checkIn).setDate(new Date(this.checkIn).getDate() + 1);
+                var checkoutMaxDate = new Date(this.checkIn).setDate(new Date(this.checkIn).getDate() + 30);
                 if (this.$.checkOut.picker) {
                     this.$.checkOut.picker.set('min', new Date(nextDay));
+                    this.$.checkOut.picker.set('max', new Date(checkoutMaxDate));
                     //Patch ATOM 501 additional issue, the next months were not populating in Iphone
                     setTimeout(function() {
                         this.$.checkOut.picker.render(true);
@@ -19363,30 +21153,21 @@ Polymer({
         }.bind(this), 10);
     },
 
+    /*This metthod is called when the search button is pressed*/
     _initiateSearch: function() {
         //validate controls
-        if (this._validateInput() == false)
+        if (this.validate() == false)
             return;
 
         //initiate search    
         var request = this._setUpProviderData();
 
-        this.fire('t-hotel-search', request);
+        this.fire('t-hotel-search-validate', request);
         //show api call progress
         //this._showProgress(true);
     },
 
-    _validateInput: function() {
-        var check = true;
-        var x = this.querySelectorAll('[required]');
-        for (var i = 0; i < x.length; i++) {
-            if (!x[i].validate()) {
-                check = false;
-            }
-        }
-        return check;
-    },
-
+    /*This function creates the form object to pass on the `search-validate` event*/
     _setUpProviderData: function() {
 
         return {
@@ -19400,328 +21181,97 @@ Polymer({
     }
 
 });
-TravelNxt = window.TravelNxt || {};
-TravelNxt.Behaviors = TravelNxt.Behaviors || {};
-TravelNxt.Behaviors.ProviderBehavior = {
-    properties: {
-        /*
-        API base url. Ex http://demo.travelnxt.com
-         */
-        apiBaseUrl: String,
-        /*
-        API relative url. Ex /api/hotel/search
-         */
-        apiRelativeUrl: String,
-        /*
-        Key values to be set in api url query string
-         */
-        queryParams: Array,
-        /*
-        API authentication token, this will be appended to url as per Mystique standards
-         */
-        authToken: String,
-        /*
-        API in progress stage
-         */
-        loading: {
-            type: Boolean,
-            notify: true,
-            readOnly: true
-        },
-
-
-        /*
-        Most recent request's API success response
-         */
-        lastResponse: {
-            type: Object,
-            notify: true,
-            readOnly: true
-        },
-
-
-        /*
-        Most recent request's API error or network error
-        Translate all network errors to below given format
-        Sample error object
-        {
-            "code": Number,
-            "message": String,
-            "additionalMessages": [
-              {
-                "description": String,
-                "code": Number,
-                "message": String
-              }
-            ]
-        }
-         */
-        lastError: {
-            type: Object,
-            notify: true,
-            readOnly: true
-        },
-
-        /*
-        This property tracks mappings of all the errr codes and corresponding application specific error messages
-        Key will be the error code sent by API.
-        It is a readonly field
-        Example
-            var code = 316700;
-            var message = this.errorCodes[code];
-            message => 'An error occurred while updating user.'
-        */
-        errorCodes: {
-            type: Object,
-            value: {
-                "316000": "Username does not exist.",
-                "316100": "Email not registered for the user.",
-                "316200": "Invalid credentials, please try again.",
-                "316300": "Invalid credentials, please try again.",
-                "316400": "Error occurred during operation on user password.",
-                "316500": "Operation error occured, please try again.",
-                "316600": "An error occurred while deleting user.",
-                "316700": "An error occurred while updating user.",
-                "316800": "Invalid credentials, please try again.",
-                "317100": "Username is already in use, try another.",
-                "317000": "User not authorized for this action",
-                "316901": "Security answer is incorrect.",
-                "316900": "Invalid credentials, please try again.",
-                "316407": "Password cannot be same as previous 3 passwords.",
-                "316405": "Password has expired. Please set a new password.",
-                "316403": "Account locked due to wrong password attempts. Contact administrator or return after some time.",
-                "316401": "Password doesn't match complexity constraints."
-            },
-            readOnly: true
-        }
-    },
-
-    _getUrl: function() {
-        //sanitize urls before use
-        var queryString = '';
-
-        if (!this.apiBaseUrl && this.apiBaseUrl.lastIndexOf('/') == this.apiBaseUrl.length - 1) {
-            this.set('apiBaseUrl', this.apiBaseUrl.substring(0, this.apiBaseUrl.length - 1));
-        }
-        if (!this.apiRelativeUrl && this.apiRelativeUrl.firstIndexOf('/') != 0) {
-            this.set('apiRelativeUrl', '/' + this.apiRelativeUrl);
-        }
-        if (this.queryParams && this.queryParams.length) {
-            for (var i = 0; i < this.queryParams.length; i++) {
-                var key = Object.keys(this.queryParams[i])[0];
-                queryString += '&' + key + '=' + this.queryParams[i][key];
-            }
-        }
-        return this.apiBaseUrl + this.apiRelativeUrl + '?token=' + this.authToken + queryString;
-    },
-
-    _validateApiMeta: function() {
-        if (!this.apiBaseUrl) {
-            console.error('apiBaseUrl can\'t be empty');
-            return false;
-        } else if (!this.apiRelativeUrl) {
-            console.error('apiRelativeUrl can\'t be empty');
-            return false;
-        } else if (!this.authToken) {
-            console.error('authToken can\'t be empty');
-            return false;
-        }
-        return true;
-    },
-
-    /*
-    This method handles the success callback event handling.
-    It fires the success and faulure events with customized error messages
-    Success and failure event names follow following conventions -
-        1. success event name  = [component name] + '-success'
-        2. failure event name  = [component name] + '-error'
-    Expects ajax sussess event as a parameter & throws error if component name not found.
-    */
-    _successHandler: function(event) {
-
-        if (!this.nodeName)
-            console.error('node name not found!');
-
-        var error = null;
-        var success = null;    
-
-        if (!event.detail.response || !event.detail.response.status || event.detail.response.status.code == 500){
-
-            error = {
-                message: 'Operation error occured, please try again.',
-                code: 500
-            };
-            this.fire(this.nodeName.toLowerCase() + '-error', error);
-            
-        }
-
-        else if (!event.detail.response.status.isSuccessful) {
-
-            error = this._setErrorMessage(event.detail.response);
-            this.fire(this.nodeName.toLowerCase() + '-error', error);
-
-        } else {
-            success = event.detail.response;
-            this.fire(this.nodeName.toLowerCase() + '-success', success);
-        }
-
-        if(error)
-            this._setLastError(error);
-        else if(success)
-            this._setLastResponse(success);
-
-        this._setLoading(false);
-    },
-
-    /*
-    This method handles the error callback event handling.
-    It fires the faulure event with customized error message & logs the error
-    Failure event name follows following convention -
-        2. failure event name  = [component name] + '-error'
-    Expects ajax error event as a parameter & throws error if component name not found.
-    */
-    _errorHandler: function(event) {
-
-        if (!this.nodeName)
-            console.error('node name not found!');
-
-        var error = {
-            message: 'Connection error occured, please try again.',
-            code: event.detail.request.status || 500
-        };
-
-        this._setLastError(error);
-        this._setLoading(false);
-
-        this.fire(this.nodeName.toLowerCase() + '-error', error);
-        console.error(this.nodeName.toLowerCase() + '-error', error);
-
-    },
-
-    /*
-    This method returns current api response.
-    The response message will be set using errorCode property & error code sent in api response.
-    If error code is not found in the property, api message will be sent.
-    Failure message will be logged in case of no response.
-    */
-    _setErrorMessage: function(response) {
-
-        if (!response || !response.status || !this.errorCodes)
-            console.error('No api response or response status found!');
-
-        if (!this.errorCodes)
-            return {
-                code: response.status.code,
-                message: response.status.message
-            };
-
-        return {
-            code: response.status.code,
-            message: this.errorCodes[response.status.code] || response.status.message
-        };
-    }
-};
 Polymer({
 
-    is: 't-hotel-search-provider',
-    /*
-     * <p>Behaviour to validate ajax parameters and handle error codes.</p>
-     */
-    behaviors: [TravelNxt.Behaviors.ProviderBehavior],
+    is: 't-hotel-search-api-decorator',
+    observers: [
+        '_buildData(input)'
+    ],
 
-    listeners: {
-        'ajaxCall.response': '_successCallback',
-        'ajaxCall.error': '_errorCallback',
-        'ajaxCall.request': '_requestCallback'
+    properties: {
+
+        /**
+         * Pass input of the decorator
+         * @type {Object}
+         */
+        input: {
+            type: Object
+        },
+
+        /**
+         * Stores output of the decorator with notify on.
+         * @type {Object}
+         */
+        output: {
+            type: Object,
+            notify: true
+        },
+        prop:{
+            type:Array,
+            value: []
+        }
     },
 
-
-    search: function(detail){
-        //var detail = this;
-        var component = this;
-        //validate api data before initiating call
-        if(this._validateApiMeta()){
-            this.$.ajaxCall.url = this._getUrl();
-            this.$.ajaxCall.body = JSON.stringify(buildReq(detail));
-            this.$.ajaxCall.generateRequest();
-        }
-        function buildReq(detail){
-            var serviceModel = {
-                "destination": detail.location,
-                "checkInDate": {
-                    "date": detail.checkIn,
-                    "systemDateTime": component._toSystemDateTimeFormat(new Date(detail.checkIn))  //if detail.checkIn is not mm/dd/yyyy or en-US culture, parse string according to culture / globalization                     
+    //the function to create the object and assign it to the output object
+    _buildData: function(detail) {
+        var query = {
+            "destination": detail.location,
+            "checkInDate": {
+                "date": detail.checkIn,
+                "systemDateTime": this._toSystemDateTimeFormat(new Date(detail.checkIn)) //if detail.checkIn is not mm/dd/yyyy or en-US culture, parse string according to culture / globalization                     
+            },
+            "checkOutDate": {
+                "date": detail.checkOut,
+                "systemDateTime": this._toSystemDateTimeFormat(new Date(detail.checkOut)) //if detail.checkOut is not mm/dd/yyyy or en-US culture, parse string according to culture / globalization                     
+            },
+            "rooms": [{
+                "children": {
+                    "quantity": detail.childCount,
+                    "ages": [],
+                    "type": 'Child',
                 },
-                "checkOutDate": {
-                    "date": detail.checkOut,
-                    "systemDateTime": component._toSystemDateTimeFormat(new Date(detail.checkOut)) //if detail.checkOut is not mm/dd/yyyy or en-US culture, parse string according to culture / globalization                     
-                },
-                "rooms": [{
-                    "children": {
-                        "quantity": detail.childCount,
-                        "ages": [],
-                        "type": 'Child',
-                    },
-                    "adults": {
-                        "quantity": detail.adultCount,
-                        "type": 'Adult',
-                        "ages": [],
-                    }                    
-                }],
-                'responseContentType': 'rates',
-                "type": 'Hotel'
+                "adults": {
+                    "quantity": detail.adultCount,
+                    "type": 'Adult',
+                    "ages": [],
+                }
+            }],
+            'responseContentType': 'rates',
+            "type": 'Hotel'
+        };
+        //default adult age setup
+        if (detail.adultCount) {
+            for (var i = 0; i < detail.adultCount; i++) {
+                query.rooms[0].adults.ages.push(25); //TODO: give provision for adult ages also in component api
             };
-            //default adult age setup
-            if(detail.adultCount){
-                for (var i = 0; i < detail.adultCount; i++) {
-                    serviceModel.rooms[0].adults.ages.push(25); //TODO: give provision for adult ages also in component api
-                };
-            }  
-
-            if(detail.childAges){
-                for (var i = 0; i < detail.childAges.length; i++) {
-                    serviceModel.rooms[0].children.ages.push(detail.childAges[i].age);
-                };
-            }
-            return serviceModel;  
         }
-        
+
+        if (detail.childAges) {
+            for (var i = 0; i < detail.childAges.length; i++) {
+                query.rooms[0].children.ages.push(detail.childAges[i].age);
+            };
+        }
+        this.output = query;
     },
 
     //Mystique specific logic to convert display date to system date (YYYY-MM-DDTHH:MM:SS)
     //TODO: remove if any date parse/format plugin is setup application 
-    _toSystemDateTimeFormat: function(dateToFormat){
-        if(!dateToFormat)
+    _toSystemDateTimeFormat: function(dateToFormat) {
+        if (!dateToFormat)
             return dateToFormat;
 
-        var systemDateTime = dateToFormat.getFullYear() + '-';        
-        systemDateTime += (((dateToFormat.getMonth()+'').length == 1) ? '0' + (dateToFormat.getMonth() + 1) : (dateToFormat.getMonth() + 1)) + '-';
-        systemDateTime += (((dateToFormat.getDate()+'').length == 1) ? '0' + dateToFormat.getDate() : dateToFormat.getDate());
-        return  systemDateTime + 'T00:00:00'
-    },
-
-    _requestCallback: function(){
-        this.fire('request', this.$.ajaxCall.toRequestOptions(), { bubbles: false });
-    },
-
-        /*
-         * <p>Success callback</p>
-         */
-        _successCallback: function(event) {
-            this._successHandler(event);
-        },
-
-
-        /*
-         * <p>error callback</p>
-         */
-        _errorCallback: function(event) {
-            this._errorHandler(event);
-        }
+        var systemDateTime = dateToFormat.getFullYear() + '-';
+        systemDateTime += (((dateToFormat.getMonth() + '').length == 1) ? '0' + (dateToFormat.getMonth() + 1) : (dateToFormat.getMonth() + 1)) + '-';
+        systemDateTime += (((dateToFormat.getDate() + '').length == 1) ? '0' + dateToFormat.getDate() : dateToFormat.getDate());
+        return systemDateTime + 'T00:00:00'
+    }
 
 });
 TravelNxt = window.TravelNxt || {};
 TravelNxt.Behaviors = TravelNxt.Behaviors || {};
+/*
+@polymerBehavior 
+*/
 TravelNxt.Behaviors.FareBehavior = {
     properties: {
         /*Fare components from API*/
@@ -19887,6 +21437,17 @@ Polymer({
         value: ''
       },
 
+    /**
+       * The icon to put when theres no source 
+       *
+       * @attribute src
+       * @type string
+       * @default 'perm-media'
+       */
+      loadingIcon: {
+          type: String,
+          value: 'perm-media'
+      },
       /**
        * When true, the image is prevented from loading and any placeholder is
        * shown.  This may be useful when a binding to the src property is known to
@@ -20165,9 +21726,18 @@ Polymer({
   });
 Polymer({
 
-    is: 't-hotel-itinerary-item',
+    is: 't-hotel-result-item',
 
     properties: {
+
+
+        /*To handle styles in the map page*/
+        isMapPage: {
+            type: Boolean,
+            value: false,
+            reflectToAttribute: true,
+            observer: '_checkIfMapPage'
+        },
 
         /*Itinerary is the API json object to pass in the component which will populate the data*/
         itinerary: {
@@ -20181,6 +21751,12 @@ Polymer({
         showDebugInfo: {
             type: Boolean,
             value: false
+        },
+
+        isHotelSelected: {
+            type: Boolean,
+            reflectToAttribute: true,
+            value: false
         }
 
     },
@@ -20189,12 +21765,22 @@ Polymer({
 
     behaviors: [TravelNxt.Behaviors.FareBehavior],
 
+    _checkIfMapPage: function() {
+        if (this.isMapPage) {
+            this.$.hotelName.classList.add('link-style');
+        }
+    },
+
+    _fireHotelClick: function() {
+        this.fire('hotel-click', this.itinerary.id);
+    },
+
     _fareComponentsChanged: function(components) {
         this._components = components;
         //this.notifyPath('_components', components);
     },
 
-    _getLowerCase:function(text){
+    _getLowerCase: function(text) {
         text = text || "";
         return text.toLowerCase();
     },
@@ -20214,7 +21800,7 @@ Polymer({
         return null;
     },
 
-    _isDiscountApplicable: function (strikeOffPrice, displayPrice) {
+    _isDiscountApplicable: function(strikeOffPrice, displayPrice) {
         return strikeOffPrice.money.amount > displayPrice.money.amount;
     },
 
@@ -20231,6 +21817,10 @@ Polymer({
         var divideBy = (24 * 60 * 60 * 1000);
 
         return Math.floor(diff / divideBy);
+    },
+
+    _hilightItem: function() {
+        this.isHotelSelected = true;
     }
 });
 (function() {
@@ -20261,6 +21851,8 @@ Polymer({
 
       /**
        * Use this property instead of `value` for two-way data binding.
+       * This property will be deprecated in the future. Use `value` instead.
+       * @type {string|number}
        */
       bindValue: {
         observer: '_bindValueChanged',
@@ -20318,22 +21910,6 @@ Polymer({
       },
 
       /**
-       * Bound to the textarea's `name` attribute.
-       */
-      name: {
-        type: String
-      },
-
-      /**
-       * The value for this input, same as `bindValue`
-       */
-      value: {
-        notify: true,
-        type: String,
-        computed: '_computeValue(bindValue)'
-      },
-
-      /**
        * Bound to the textarea's `placeholder` attribute.
        */
       placeholder: {
@@ -20367,12 +21943,46 @@ Polymer({
       'input': '_onInput'
     },
 
+    observers: [
+      '_onValueChanged(value)'
+    ],
+
     /**
      * Returns the underlying textarea.
      * @type HTMLTextAreaElement
      */
     get textarea() {
       return this.$.textarea;
+    },
+
+    /**
+     * Returns textarea's selection start.
+     * @type Number
+     */
+    get selectionStart() {
+      return this.$.textarea.selectionStart;
+    },
+
+    /**
+     * Returns textarea's selection end.
+     * @type Number
+     */
+    get selectionEnd() {
+      return this.$.textarea.selectionEnd;
+    },
+
+    /**
+     * Sets the textarea's selection start.
+     */
+    set selectionStart(value) {
+      this.$.textarea.selectionStart = value;
+    },
+
+    /**
+     * Sets the textarea's selection end.
+     */
+    set selectionEnd(value) {
+      this.$.textarea.selectionEnd = value;
     },
 
     /**
@@ -20399,32 +22009,28 @@ Polymer({
       return valid;
     },
 
-    _update: function() {
-      this.$.mirror.innerHTML = this._valueForMirror();
-
-      var textarea = this.textarea;
-      // If the value of the textarea was updated imperatively, then we
-      // need to manually update bindValue as well.
-      if (textarea && this.bindValue != textarea.value) {
-        this.bindValue = textarea.value;
-      }
-    },
-
     _bindValueChanged: function() {
       var textarea = this.textarea;
       if (!textarea) {
         return;
       }
 
-      textarea.value = this.bindValue;
-      this._update();
+      // If the bindValue changed manually, then we need to also update
+      // the underlying textarea's value. Otherwise this change was probably
+      // generated from the _onInput handler, and the two values are already
+      // the same.
+      if (textarea.value !== this.bindValue) {
+        textarea.value = !(this.bindValue || this.bindValue === 0) ? '' : this.bindValue;
+      }
+
+      this.value = this.bindValue;
+      this.$.mirror.innerHTML = this._valueForMirror();
       // manually notify because we don't want to notify until after setting value
       this.fire('bind-value-changed', {value: this.bindValue});
     },
 
     _onInput: function(event) {
       this.bindValue = event.path ? event.path[0].value : event.target.value;
-      this._update();
     },
 
     _constrain: function(tokens) {
@@ -20439,7 +22045,8 @@ Polymer({
       while (this.rows > 0 && _tokens.length < this.rows) {
         _tokens.push('');
       }
-      return _tokens.join('<br>') + '&nbsp;';
+      // Use &#160; instead &nbsp; of to allow this element to be used in XHTML.
+      return _tokens.join('<br/>') + '&#160;';
     },
 
     _valueForMirror: function() {
@@ -20455,14 +22062,11 @@ Polymer({
       this.$.mirror.innerHTML = this._constrain(this.tokens);
     },
 
-    _computeValue: function() {
-      return this.bindValue;
+    _onValueChanged: function() {
+      this.bindValue = this.value;
     }
   });
-(function() {
-
-  Polymer({
-
+Polymer({
     is: 'paper-input-char-counter',
 
     behaviors: [
@@ -20470,14 +22074,23 @@ Polymer({
     ],
 
     properties: {
-
       _charCounterStr: {
         type: String,
         value: '0'
       }
-
     },
 
+    /**
+     * This overrides the update function in PaperInputAddonBehavior.
+     * @param {{
+     *   inputElement: (Element|undefined),
+     *   value: (string|undefined),
+     *   invalid: boolean
+     * }} state -
+     *     inputElement: The input element.
+     *     value: The input value.
+     *     invalid: True if the input value is invalid.
+     */
     update: function(state) {
       if (!state.inputElement) {
         return;
@@ -20485,18 +22098,15 @@ Polymer({
 
       state.value = state.value || '';
 
-      // Account for the textarea's new lines.
-      var str = state.value.replace(/(\r\n|\n|\r)/g, '--').length;
+      var counter = state.value.toString().length.toString();
 
       if (state.inputElement.hasAttribute('maxlength')) {
-        str += '/' + state.inputElement.getAttribute('maxlength');
+        counter += '/' + state.inputElement.getAttribute('maxlength');
       }
-      this._charCounterStr = str;
+
+      this._charCounterStr = counter;
     }
-
   });
-
-})();
 (function() {
 
   Polymer({
@@ -22999,80 +24609,113 @@ Polymer({
 
     properties: {
 
-        /*The Label only works when the normal heading is set to true*/
-        label:{
-            type:String,
-            reflectToAttribute:true,
-            value:'Normal Heading'
+        /**
+         * The label to display in the middle of the header if `normalHeading`
+         * is set to true.
+         * @type {String}
+         */
+        label: {
+            type: String,
+            reflectToAttribute: true,
+            value: 'Normal Heading'
         },
 
-        /*The left icon URL from set of iron icons. It has a default arrow back value.*/
-        icon:{
-            type:String,
-            value:'arrow-back'
+        /**
+         * The name of the icon to be displayed on the left side of the header.
+         * @type {String}
+         */
+        icon: {
+            type: String,
+            value: 'arrow-back'
         },
 
-        /*The URL of the page to redirect to on left button click. Keep it empty to have no redirect action on left button click.*/
-        url:{
-            type:String,
-            reflectToAttribute:true
+        /**
+         * If not empty then the value of this property is the url to which
+         * the page redirects when left icon is clicked.
+         * @type {String}
+         */
+        url: {
+            type: String,
+            reflectToAttribute: true
         },
 
-        /*The Icon on the right.. Not works when the normal heading is set to true.*/
-        rightIcon:{
-            type:String,
-            reflectToAttribute:true,
-            value:''
+        /**
+         * The icon to be displayed on the right side of the header if
+         * `normalHeadin` is set to false.
+         * @type {String}
+         */
+        rightIcon: {
+            type: String,
+            reflectToAttribute: true,
+            value: ''
         },
 
-        /*to check whether the icon is there or not. This is required for the template if condition cause couldnt do it with 'if' function.*/
-        _hasRightIcon:{
-            type:Boolean,
-            computed:'_checkRightIcon(normalHeading,rightIcon)'
+        /**
+         * Tells whether there is a right icon or not.
+         * This property is needed because couldn't use the function directly in
+         * the template if condition.
+         * @type {Boolean}
+         */
+        _hasRightIcon: {
+            type: Boolean,
+            computed: '_checkRightIcon(normalHeading, rightIcon)'
         },
 
-        /*Normal heading is the boolean value to only put an icon and the header text.*/
-        normalHeading:{
-            type:Boolean,
-            reflectToAttribute:true,
-            value:false
+        /**
+         * Controls whether a label is displayed or an icon on the right side.
+         * @type {Boolean}
+         */
+        normalHeading: {
+            type: Boolean,
+            reflectToAttribute: true,
+            value: false
         }
-
     },
 
-    /*to check if theres any icon present or not.*/
-    _checkRightIcon:function(normalHeading,rightIcon){
-        if(normalHeading)
+    // to check if theres any icon present or not
+    _checkRightIcon: function(normalHeading, rightIcon) {
+        if (normalHeading)
             return false;
-        if(rightIcon.length > 0)
+
+        if (rightIcon.length > 0)
             return true;
+
         return false;
     },
 
-    _checkUrl:function(e){
-        this.fire('left-button-click', {bubbles: false});
+    _checkUrl: function(e) {
+        this.fire('left-button-click', {
+            bubbles: false
+        });
     },
 
-    /*to fire an event for the right icon click.*/
-    _rightButtonClick:function(){
-        /*event for the right icon click.*/
+    // to fire an event for the right icon click
+    _rightButtonClick: function() {
+        // event for the right icon click
         this.fire('right-button-click');
     }
-
-}) ;
-(function() {
-
-  Polymer({
-
-    is: 'paper-item',
-
+});
+/** @polymerBehavior Polymer.PaperItemBehavior */
+  Polymer.PaperItemBehaviorImpl = {
     hostAttributes: {
-      role: 'listitem'
+      role: 'option',
+      tabindex: '0'
     }
+  };
 
-  });
+  /** @polymerBehavior */
+  Polymer.PaperItemBehavior = [
+    Polymer.IronButtonState,
+    Polymer.IronControlState,
+    Polymer.PaperItemBehaviorImpl
+  ];
+Polymer({
+      is: 'paper-item',
 
-})();
+      behaviors: [
+        Polymer.PaperItemBehavior
+      ]
+    });
 /**
    * `Polymer.IronScrollTargetBehavior` allows an element to respond to scroll events from a
    * designated scroll target.
@@ -23102,7 +24745,7 @@ Polymer({
        *  </x-element>
        * </div>
        *```
-       * In this case, the `scrollTarget` will point to the outer div element. 
+       * In this case, the `scrollTarget` will point to the outer div element.
        *
        * ### Document scrolling
        *
@@ -23119,7 +24762,7 @@ Polymer({
        *```js
        * appHeader.scrollTarget = document.querySelector('#scrollable-element');
        *```
-       * 
+       *
        * @type {HTMLElement}
        */
       scrollTarget: {
@@ -25614,13 +27257,14 @@ Polymer({
     },
 
     _getFilteredRatio: function(pagingInfo) {
-        if (pagingInfo != undefined)
+        if (pagingInfo) {
             this.filteredRatio = pagingInfo.filteredCount + "/" + pagingInfo.total;
 
-        if (pagingInfo.total == 1 && pagingInfo.filteredCount == pagingInfo.total) {
-            this._disableFilters = true;
-        } else {
-            this._disableFilters = false;
+            if (pagingInfo.total == 1 && pagingInfo.filteredCount == pagingInfo.total) {
+                this._disableFilters = true;
+            } else {
+                this._disableFilters = false;
+            }
         }
     },
     /*This functionality is removed for now*/
@@ -25764,7 +27408,31 @@ Polymer({
         }
         e.stopPropagation();
     },
+    /**
+     * This method returns diplay value for a filter.
+     * It might be either `count` in additional info or `price` in the item value with currency.
+     * If parent view explicitely asks to show price or count by setting either of `show-{{group}}-count` or `show-{{group}}-price`,
+     * method shows that value.
+     * @param  {[Object]} item {"group":"Price","name":"Min","label":"Minimum Price","displayValue":"$17.49","value":"17.49","selectedValue":null,"additionalInfo":[{"key":"Unit","value":"$"}]}
+     * @return {String}
+     */
     _getDisplayValue: function(item) {
+        var showCountProp = 'show' + item.group + 'Count';
+        var showPriceProp = 'show' + item.group + 'Price';
+        if (!this[showPriceProp] && !this[showCountProp]){
+            if (parseFloat(item.value)) {
+                return this._getMinValueWithCurrency(item);
+            } else {
+                return this._getCountValue(item.additionalInfo);
+            }
+        } else if (this[showPriceProp]) {
+            return this._getMinValueWithCurrency(item);
+        } else if (this[showCountProp]) {
+            return this._getCountValue(item.additionalInfo);
+        }
+        return "";
+    },
+    _getMinValueWithCurrency: function (item) {
         if (this.currency) {
             item.value = parseFloat(Math.round(item.value * 100) / 100);
             return this.currency + ' ' + item.value;
@@ -27334,6 +29002,19 @@ TravelNxt.Behaviors.UpdateFiltersBehavior = {
                 },
 
                 /**
+                 * This property defines which values(count or starting price) are being deplayed in front of option filters.
+                 * [
+                 *     "showRatingCount",
+                 *     "show{filterGroup}Price"
+                 * ]
+                 * @type {Array}
+                 */
+                filterDisplaySettings: {
+                    type: Array,
+                    observer: '_setFilterDisplaySettings'
+                },
+
+                /**
                  * Turns the display of sorting controls
                  */
                 withSorting: {
@@ -27499,6 +29180,12 @@ TravelNxt.Behaviors.UpdateFiltersBehavior = {
                 searchIcon: {
                     type: String,
                     value: 'search'
+                },
+
+                // use load more button or infinite scroll
+                loadMore: {
+                  type: Boolean,
+                  value: false
                 }
             },
 
@@ -27516,7 +29203,9 @@ TravelNxt.Behaviors.UpdateFiltersBehavior = {
                         component._defaultSorting = param.value;
                 });
 
-                this._setupInfiniteScroll();
+                if (!this.loadMore) {
+                  this._setupInfiniteScroll();
+                }
 
                 if (this.dataApi != undefined && this.dataApi != '') {
                     this.$.dataCall.url = this.dataApi + (this.dataApi.indexOf('?') !=-1 ?  "&" : "?") + this._defaultSorting + this.sortBy;
@@ -27539,6 +29228,29 @@ TravelNxt.Behaviors.UpdateFiltersBehavior = {
                     event.stopImmediatePropagation();
                     return false;
                 });
+            },
+
+            _hideLoadMore: function(loadMore, _list, data) {
+              let fc = this.get('data.pagingInfo.filteredCount');
+              let lc = this.get('_list.length');
+
+              if (!loadMore ||
+                  fc === null || fc === undefined ||
+                  lc === null || lc === undefined) {
+
+                return true;
+              }
+
+              return lc >= fc;
+            },
+
+            _loadMore: function(ev) {
+              if (ev.currentTarget.disabled) {
+                return;
+              }
+              else if (this._list.length < this.data.pagingInfo.filteredCount) {
+                this._getNextDataSet();
+              }
             },
 
             _dataApiChanged: function () {  
@@ -27593,6 +29305,15 @@ TravelNxt.Behaviors.UpdateFiltersBehavior = {
 
                 component.$.list.fire('resize');
 
+            },
+
+            _setFilterDisplaySettings: function () {
+                if (this.filterDisplaySettings.length) {
+                    var filterComp = this.$.filter;
+                    this.filterDisplaySettings.forEach(function (setting) {
+                        filterComp[setting] = true;
+                    })
+                }
             },
 
             _updateFilters: function () {
@@ -27849,6 +29570,11 @@ TravelNxt.Behaviors.UpdateFiltersBehavior = {
 
             _redirectToPage: function () {
                 window.location.href = this.redirectLink;
+            },
+
+            //Method to run generate filter 
+            generateFilter: function(){
+                this.$.filter.generateFilter();
             }
 
         });
@@ -27858,6 +29584,12 @@ Polymer({
 		is: "t-overlay",
 
 		properties:{
+
+			/**
+             * The icon of the header back by default it is the back arrow
+             */
+			icon:String,
+				
 
 			/**
              * The header text of the overlay. this doesnt not accept content because 
@@ -27874,7 +29606,8 @@ Polymer({
 			active:{
 				type:Boolean,
 				value:false,
-				reflectToAttribute:true
+				reflectToAttribute:true,
+				observer:'_handlePageScroll'
 			},
 
 			/**
@@ -27889,6 +29622,7 @@ Polymer({
 
 		closeModal:function(){
 			this.active = false;
+			this.fire('t-overlay-closed');
 		},
 
 		_okClick:function(){
@@ -27899,7 +29633,15 @@ Polymer({
 		_cancelClick:function(){
 			this.closeModal();
 			this.fire('click-cancel');
-		}
+		},
+
+		_handlePageScroll:function(){
+			if(!this.active){
+            	Polymer.IronDropdownScrollManager.removeScrollLock(this);
+			}else{
+                Polymer.IronDropdownScrollManager.pushScrollLock(this);
+			}
+		}	
 
 	});
 /*
@@ -29224,24 +30966,300 @@ Polymer({
                             : this.collapseIcon.closed;
     }
 });
-Polymer({
-
-    is: 't-mystique-auth',
-
-    properties:{
-        
-        name:{
-          type:String,
-          value:""
+TravelNxt = window.TravelNxt || {};
+TravelNxt.Behaviors = TravelNxt.Behaviors || {};
+/*
+@polymerBehavior 
+*/
+TravelNxt.Behaviors.ProviderBehavior = {
+    properties: {
+        /*
+        API base url. Ex http://demo.travelnxt.com
+         */
+        apiBaseUrl: String,
+        /*
+        API relative url. Ex /api/hotel/search
+         */
+        apiRelativeUrl: String,
+        /*
+        Key values to be set in api url query string
+         */
+        queryParams: Array,
+        /*
+        API authentication token, this will be appended to url as per Mystique standards
+         */
+        authToken: String,
+        /*
+        API in progress stage
+         */
+        loading: {
+            type: Boolean,
+            notify: true,
+            readOnly: true
         },
 
-        cid:Number,
 
-        url:String,
+        /*
+        Most recent request's API success response
+         */
+        lastResponse: {
+            type: Object,
+            notify: true,
+            readOnly: true
+        },
 
-        tokenResponse:{
-          type:Object,
-          notify:true
+
+        /*
+        Most recent request's API error or network error
+        Translate all network errors to below given format
+        Sample error object
+        {
+            "code": Number,
+            "message": String,
+            "additionalMessages": [
+              {
+                "description": String,
+                "code": Number,
+                "message": String
+              }
+            ]
+        }
+         */
+        lastError: {
+            type: Object,
+            notify: true,
+            readOnly: true
+        },
+
+        /*
+        This property tracks mappings of all the errr codes and corresponding application specific error messages
+        Key will be the error code sent by API.
+        It is a readonly field
+        Example
+            var code = 316700;
+            var message = this.errorCodes[code];
+            message => 'An error occurred while updating user.'
+        */
+        errorCodes: {
+            type: Object,
+            value: {
+                "316000": "Username does not exist.",
+                "316100": "Email not registered for the user.",
+                "316200": "Invalid credentials, please try again.",
+                "316300": "Invalid credentials, please try again.",
+                "316400": "Error occurred during operation on user password.",
+                "316500": "Operation error occured, please try again.",
+                "316600": "An error occurred while deleting user.",
+                "316700": "An error occurred while updating user.",
+                "316800": "Invalid credentials, please try again.",
+                "317100": "Username is already in use, try another.",
+                "317000": "User not authorized for this action",
+                "316901": "Security answer is incorrect.",
+                "316900": "Invalid credentials, please try again.",
+                "316407": "Password cannot be same as previous 3 passwords.",
+                "316405": "Password has expired. Please set a new password.",
+                "316403": "Account locked due to wrong password attempts. Contact administrator or return after some time.",
+                "316401": "Password doesn't match complexity constraints."
+            },
+            readOnly: true
+        }
+    },
+
+    _getUrl: function() {
+        //sanitize urls before use
+        var queryString = '';
+
+        if (!this.apiBaseUrl && this.apiBaseUrl.lastIndexOf('/') == this.apiBaseUrl.length - 1) {
+            this.set('apiBaseUrl', this.apiBaseUrl.substring(0, this.apiBaseUrl.length - 1));
+        }
+        if (!this.apiRelativeUrl && this.apiRelativeUrl.firstIndexOf('/') != 0) {
+            this.set('apiRelativeUrl', '/' + this.apiRelativeUrl);
+        }
+        if (this.queryParams && this.queryParams.length) {
+            for (var i = 0; i < this.queryParams.length; i++) {
+                var key = Object.keys(this.queryParams[i])[0];
+                queryString += '&' + key + '=' + this.queryParams[i][key];
+            }
+        }
+        return this.apiBaseUrl + this.apiRelativeUrl + '?token=' + this.authToken + queryString;
+    },
+
+    _validateApiMeta: function() {
+        if (!this.apiBaseUrl) {
+            console.error('apiBaseUrl can\'t be empty');
+            return false;
+        } else if (!this.apiRelativeUrl) {
+            console.error('apiRelativeUrl can\'t be empty');
+            return false;
+        } else if (!this.authToken) {
+            console.error('authToken can\'t be empty');
+            return false;
+        }
+        return true;
+    },
+
+    /*
+    This method handles the success callback event handling.
+    It fires the success and faulure events with customized error messages
+    Success and failure event names follow following conventions -
+        1. success event name  = [component name] + '-success'
+        2. failure event name  = [component name] + '-error'
+    Expects ajax sussess event as a parameter & throws error if component name not found.
+    */
+    _successHandler: function(event) {
+
+        if (!this.nodeName)
+            console.error('node name not found!');
+
+        var error = null;
+        var success = null;    
+
+        if (!event.detail.response || !event.detail.response.status || event.detail.response.status.code == 500){
+
+            error = {
+                message: 'Operation error occured, please try again.',
+                code: 500
+            };
+            this.fire(this.nodeName.toLowerCase() + '-error', error);
+            
+        }
+
+        else if (!event.detail.response.status.isSuccessful) {
+
+            error = this._setErrorMessage(event.detail.response);
+            this.fire(this.nodeName.toLowerCase() + '-error', error);
+
+        } else {
+            success = event.detail.response;
+            this.fire(this.nodeName.toLowerCase() + '-success', success);
+        }
+
+        if(error)
+            this._setLastError(error);
+        else if(success)
+            this._setLastResponse(success);
+
+        this._setLoading(false);
+    },
+
+    /*
+    This method handles the error callback event handling.
+    It fires the faulure event with customized error message & logs the error
+    Failure event name follows following convention -
+        2. failure event name  = [component name] + '-error'
+    Expects ajax error event as a parameter & throws error if component name not found.
+    */
+    _errorHandler: function(event) {
+
+        if (!this.nodeName)
+            console.error('node name not found!');
+
+        var error = {
+            message: 'Connection error occured, please try again.',
+            code: event.detail.request.status || 500
+        };
+
+        this._setLastError(error);
+        this._setLoading(false);
+
+        this.fire(this.nodeName.toLowerCase() + '-error', error);
+        console.error(this.nodeName.toLowerCase() + '-error', error);
+
+    },
+
+    /*
+    This method returns current api response.
+    The response message will be set using errorCode property & error code sent in api response.
+    If error code is not found in the property, api message will be sent.
+    Failure message will be logged in case of no response.
+    */
+    _setErrorMessage: function(response) {
+
+        if (!response || !response.status || !this.errorCodes)
+            console.error('No api response or response status found!');
+
+        if (!this.errorCodes)
+            return {
+                code: response.status.code,
+                message: response.status.message
+            };
+
+        return {
+            code: response.status.code,
+            message: this.errorCodes[response.status.code] || response.status.message
+        };
+    }
+};
+(function() {
+
+    Polymer({
+        is: 't-search-api',
+
+        properties: {
+            /*Pass the build data for each type of search request*/
+            data:{
+                type: Object
+            }
+
+        },
+
+        observers:[
+            'search(data)'
+        ],
+        /*
+         * <p>Behaviour to validate ajax parameters and handle error codes.</p>
+         */
+        behaviors: [TravelNxt.Behaviors.ProviderBehavior],
+
+        /*
+         * <p>Method to search airs</p>
+         */
+        search: function(data) {
+
+            if (!data) {
+                throw Error("search request is mandetory");
+            }
+
+            if (this._validateApiMeta()) {
+                this.$.ajaxCall.url = this._getUrl();
+                this.$.ajaxCall.body = JSON.stringify(data);
+                this.$.ajaxCall.generateRequest();
+            }
+        }
+    });
+})();
+Polymer({
+    is: 't-mystique-auth',
+
+    properties: {
+        /**
+         * The name of the context
+         * @type {String}
+         */
+        name: {
+          type: String,
+          value: ""
+        },
+
+        /**
+         * The cid of the context
+         * @type {Number}
+         */
+        cid: Number,
+
+        /**
+         * The authenticate by context api endpoint
+         * @type {String}
+         */
+        url: String,
+
+        /**
+         * The context api response for getting token
+         * @type {Object}
+         */
+        tokenResponse: {
+          type: Object,
+          notify: true
         }
     },
 
@@ -29250,6 +31268,7 @@ Polymer({
         "Name": this.name,
         "CID": this.cid
       };
+
       this.$.tokenCall.body = JSON.stringify(request);
       this.$.tokenCall.generateRequest();
     },
@@ -29257,130 +31276,144 @@ Polymer({
     _callback: function(event){
       this.tokenResponse =   event.detail.response;
     }
-
-
- 
   });
 Polymer({
 
     is: 't-badge',
 
     properties: {
+
+      /**
+       * Set the text inside the badge with the property
+       */
     	label:String
     }
 
 });
-(function (scope) {
-    var JuicyHTMLPrototype = Object.create( (HTMLTemplateElement || HTMLElement ).prototype);
-    var isSafari = navigator.vendor && navigator.vendor.indexOf("Apple") > -1 && navigator.userAgent && !navigator.userAgent.match("CriOS");
+(function(scope) {
+        var JuicyHTMLPrototype = Object.create((HTMLTemplateElement || HTMLElement).prototype);
+        var isSafari = navigator.vendor && navigator.vendor.indexOf("Apple") > -1 && navigator.userAgent && !navigator.userAgent.match("CriOS");
 
-    JuicyHTMLPrototype.createdCallback = function(){
-        var model = null;
-        Object.defineProperty(this, "model",{
-            set: function(newValue){
-                model = newValue;
-                this.attachModel(newValue);
-            },
-            get: function(){
-             return model;
-            }
-        });
-    };
-    JuicyHTMLPrototype.stampedNodes = null;
-    JuicyHTMLPrototype.loadTemplate_ = function() {
-      var val = this.getAttribute('content');
-      if (val && (val.indexOf('/') === 0 || val.indexOf('./') === 0 || val.indexOf('../') === 0)) {
-        //val is a URL, load the partial from the HTTP server/cache
-        var oReq = new XMLHttpRequest();
-        var that = this;
-        oReq.onload = function (event) {
-          that.reattachTemplate_(event.target.responseText);
-        };
-        oReq.open("GET", val, true);
-        oReq.send();
-      }
-      else {
-        //val is HTML code, insert the partial from the string
-        this.reattachTemplate_(val);
-      }
-    };
-
-    JuicyHTMLPrototype.reattachTemplate_ = function(html) {
-      this.clear();
-      // fragmentFromString(strHTML) from http://stackoverflow.com/a/25214113/868184
-      var range = document.createRange();
-
-      // Safari does not support `createContextualFragment` without selecting a node.
-      if (isSafari) {
-        range.selectNode(this);
-      }
-
-      var fragment = range.createContextualFragment(html);
-      // convert dynamic NodeList to regullar array
-      this.stampedNodes = Array.prototype.slice.call(fragment.childNodes);
-      // attach models
-      this.attributeChangedCallback("model", undefined, this.model || this.getAttribute("model"));
-      this.parentNode.insertBefore(fragment, this.nextSibling);
-      this.dispatchEvent(new CustomEvent("stamped", {detail: this.stampedNodes}));
-
-    };
-
-    /**
-     * Remove stamped content.
-     */
-    JuicyHTMLPrototype.clear = function(){
-      var parent = this.parentNode;
-      var childNo = this.stampedNodes && this.stampedNodes.length || 0;
-      var child;
-      while(childNo--){
-        // this.stampedNodes[childNo].remove();
-        child = this.stampedNodes[childNo];
-        if (child.parentNode) {
-          child.parentNode.removeChild(child);
-        }
-      }
-    };
-
-    JuicyHTMLPrototype.isAttached = false;
-    JuicyHTMLPrototype.attachedCallback = function () {
-      this.isAttached = true;
-      this.loadTemplate_();
-    };
-    JuicyHTMLPrototype.detachedCallback = function(){
-      this.isAttached = false;
-      this.clear();
-    };
-    JuicyHTMLPrototype.attributeChangedCallback = function(name, oldVal, newVal){
-      if(this.isAttached){
-          switch(name){
-              case "model":
-                if (typeof newVal === "string") {
-                    newVal = newVal ? JSON.parse(newVal) : null;
+        JuicyHTMLPrototype.createdCallback = function() {
+            var model = null;
+            Object.defineProperty(this, "model", {
+                set: function(newValue) {
+                    model = newValue;
+                    this.attachModel(newValue);
+                },
+                get: function() {
+                    return model;
                 }
-                this.model = newVal;
-                break;
-              case "content":
-                this.loadTemplate_();
-                break;
-          }
-      }
-    };
+            });
+        };
+        JuicyHTMLPrototype.stampedNodes = null;
+        JuicyHTMLPrototype.loadTemplate_ = function() {
+            var val = this.getAttribute('content');
+            if (val && (val.indexOf('/') === 0 || val.indexOf('./') === 0 || val.indexOf('../') === 0)) {
+                //val is a URL, load the partial from external file
+                this._loadExternalFile(val);
+            } else if (val === null) {
+                this.clear();
+            } else {
+                //val is HTML code, insert the partial from the string
+                this.reattachTemplate_(val);
+            }
+        };
+        /**
+         * Load the partial from the HTTP server/cache, via XHR.
+         * @param  {String} url relative/absolute string to load the resource
+         * @return {HTMLElement}     itself
+         */
+        JuicyHTMLPrototype._loadExternalFile = function(url){
+            var oReq = new XMLHttpRequest();
+            var that = this;
+            oReq.onload = function(event) {
+                that.reattachTemplate_(event.target.responseText);
+            };
+            oReq.open("GET", url, true);
+            oReq.send();
+        };
 
-    JuicyHTMLPrototype.attachModel = function(model, arrayOfElements){
-        arrayOfElements || (arrayOfElements = this.stampedNodes);
-        if (model === null || !arrayOfElements) {
-            return;
-        }
-        for (var childNo = 0; childNo < arrayOfElements.length; childNo++) {
-            arrayOfElements[childNo].model = model;
-        }
-    };
+        JuicyHTMLPrototype.reattachTemplate_ = function(html) {
+            this.clear();
+            // fragmentFromString(strHTML) from http://stackoverflow.com/a/25214113/868184
+            var range = document.createRange();
 
-    scope.JuicyHTMLElement = document.registerElement('juicy-html', {
-      prototype: JuicyHTMLPrototype,
-      extends: "template"
-    });
-})(window);
+            // Safari does not support `createContextualFragment` without selecting a node.
+            if (isSafari) {
+                range.selectNode(this);
+            }
+
+            var fragment = range.createContextualFragment(html);
+            // convert dynamic NodeList to regullar array
+            this.stampedNodes = Array.prototype.slice.call(fragment.childNodes);
+            // attach models
+            this.attributeChangedCallback("model", undefined, this.model || this.getAttribute("model"));
+            this.parentNode.insertBefore(fragment, this.nextSibling);
+            this.dispatchEvent(new CustomEvent("stamped", {
+                detail: this.stampedNodes
+            }));
+
+        };
+
+        /**
+         * Remove stamped content.
+         */
+        JuicyHTMLPrototype.clear = function() {
+            var parent = this.parentNode;
+            var childNo = this.stampedNodes && this.stampedNodes.length || 0;
+            var child;
+            while (childNo--) {
+                // this.stampedNodes[childNo].remove();
+                child = this.stampedNodes[childNo];
+                if (child.parentNode) {
+                    child.parentNode.removeChild(child);
+                }
+            }
+            // forget the removed nodes
+            this.stampedNodes = null;
+        };
+
+        JuicyHTMLPrototype.isAttached = false;
+        JuicyHTMLPrototype.attachedCallback = function() {
+            this.isAttached = true;
+            this.loadTemplate_();
+        };
+        JuicyHTMLPrototype.detachedCallback = function() {
+            this.isAttached = false;
+            this.clear();
+        };
+        JuicyHTMLPrototype.attributeChangedCallback = function(name, oldVal, newVal) {
+            if (this.isAttached) {
+                switch (name) {
+                    case "model":
+                        if (typeof newVal === "string") {
+                            newVal = newVal ? JSON.parse(newVal) : null;
+                        }
+                        this.model = newVal;
+                        break;
+                    case "content":
+                        this.loadTemplate_();
+                        break;
+                }
+            }
+        };
+
+        JuicyHTMLPrototype.attachModel = function(model, arrayOfElements) {
+            arrayOfElements || (arrayOfElements = this.stampedNodes);
+            if (model === null || !arrayOfElements) {
+                return;
+            }
+            for (var childNo = 0; childNo < arrayOfElements.length; childNo++) {
+                arrayOfElements[childNo].model = model;
+            }
+        };
+
+        scope.JuicyHTMLElement = document.registerElement('juicy-html', {
+            prototype: JuicyHTMLPrototype,
+            extends: "template"
+        });
+    })(window);
 Polymer({
 
     is: 't-hotel-room-item',
@@ -29873,428 +31906,99 @@ Polymer({
     }
 
 });
-/** @polymerBehavior Polymer.IronMultiSelectableBehavior */
-  Polymer.IronMultiSelectableBehaviorImpl = {
-    properties: {
+Polymer({
+        is: 't-hotel-details-tab',
 
-      /**
-       * If true, multiple selections are allowed.
-       */
-      multi: {
-        type: Boolean,
-        value: false,
-        observer: 'multiChanged'
-      },
+        properties: {
+            /*Pass the descriptions array*/
+            descriptions: {
+                type: Array,
+                value: []
+            },
 
-      /**
-       * Gets or sets the selected elements. This is used instead of `selected` when `multi`
-       * is true.
-       */
-      selectedValues: {
-        type: Array,
-        notify: true
-      },
+            /*Pass the amenities array*/
+            amenities: {
+                type: Array,
+                value: [],
+                observer: '_hideAmenities'
+            },
 
-      /**
-       * Returns an array of currently selected items.
-       */
-      selectedItems: {
-        type: Array,
-        readOnly: true,
-        notify: true
-      },
+            /*Pass the pointsOfInterest array*/
+            pointsOfInterest: {
+                type: Array,
+                value: [],
+                observer: '_hidePois'
+            }
 
-    },
+        },
 
-    observers: [
-      '_updateSelected(attrForSelected, selectedValues)'
-    ],
+        _hideAmenities: function() {
+            this._amenities = this.amenities;
+            if (this.amenities && this.amenities.length > 15) {
+                this._amenities = this.amenities.slice(0, 10);
+                this.showMoreAmenities = true;
+            }
+        },
 
-    /**
-     * Selects the given value. If the `multi` property is true, then the selected state of the
-     * `value` will be toggled; otherwise the `value` will be selected.
-     *
-     * @method select
-     * @param {string} value the value to select.
-     */
-    select: function(value) {
-      if (this.multi) {
-        if (this.selectedValues) {
-          this._toggleSelected(value);
-        } else {
-          this.selectedValues = [value];
+        _hidePois: function() {
+            this._pointsOfInterest = this.pointsOfInterest;
+            if (this.pointsOfInterest && this.pointsOfInterest.length > 15) {
+                this._pointsOfInterest = this.pointsOfInterest.slice(0, 10);
+                this.showMorePointsOfInterest = true;
+            }
+        },
+
+        onShowAmenities: function() {
+            this._amenities = this.showMoreAmenities ? this.amenities : this.amenities.slice(0, 10);
+            this.showMoreAmenities = !this.showMoreAmenities;
+        },
+
+        onShowPOI: function() {
+            this._pointsOfInterest = this.showMorePointsOfInterest ? this.pointsOfInterest : this.pointsOfInterest.slice(0, 10);
+            this.showMorePointsOfInterest = !this.showMorePointsOfInterest;
         }
-      } else {
-        this.selected = value;
-      }
-    },
+    });
+Polymer({
+        is: 't-hotel-trip-summary',
 
-    multiChanged: function(multi) {
-      this._selection.multi = multi;
-    },
+        properties: {
 
-    _updateSelected: function() {
-      if (this.multi) {
-        this._selectMulti(this.selectedValues);
-      } else {
-        this._selectSelected(this.selected);
-      }
-    },
+        	/*Pass the itinerary Name*/
+        	itineraryName:{
+        		type: String,
+        		value: 'itinerary name'
+        	},
 
-    _selectMulti: function(values) {
-      this._selection.clear();
-      if (values) {
-        for (var i = 0; i < values.length; i++) {
-          this._selection.setItemSelected(this._valueToItem(values[i]), true);
-        }
-      }
-    },
+        	/*Pass the stay Duration*/
+        	stayDuration:{
+        		type: String,
+        		value: 'stay Duration'
+        	},
 
-    _selectionChange: function() {
-      var s = this._selection.get();
-      if (this.multi) {
-        this._setSelectedItems(s);
-      } else {
-        this._setSelectedItems([s]);
-        this._setSelectedItem(s);
-      }
-    },
+        	/*Pass the rating array*/
+        	starRating: {
+        		type:Array,
+        		value:[]
+        	},
 
-    _toggleSelected: function(value) {
-      var i = this.selectedValues.indexOf(value);
-      var unselected = i < 0;
-      if (unselected) {
-        this.selectedValues.push(value);
-      } else {
-        this.selectedValues.splice(i, 1);
-      }
-      this._selection.setItemSelected(this._valueToItem(value), unselected);
-    }
-  };
+        	/*Pass the full guest count string*/
+        	guestCount:String,
 
-  /** @polymerBehavior */
-  Polymer.IronMultiSelectableBehavior = [
-    Polymer.IronSelectableBehavior,
-    Polymer.IronMultiSelectableBehaviorImpl
-  ];
-/**
-   * `Polymer.IronMenuBehavior` implements accessible menu behavior.
-   *
-   * @demo demo/index.html
-   * @polymerBehavior Polymer.IronMenuBehavior
-   */
-  Polymer.IronMenuBehaviorImpl = {
+        	/*Pass the itinerary Desciption*/
+        	itineraryDesciption: String,
 
-    properties: {
+        	/*Pass the itinerary Address*/
+        	itineraryAddress: String
 
-      /**
-       * Returns the currently focused item.
-       * @type {?Object}
-       */
-      focusedItem: {
-        observer: '_focusedItemChanged',
-        readOnly: true,
-        type: Object
-      },
+        },
+	
+		toggle : function(ev) {
+	      var isMore = this.$.toggle.hidden = !this.$.toggle.hidden;
 
-      /**
-       * The attribute to use on menu items to look up the item title. Typing the first
-       * letter of an item when the menu is open focuses that item. If unset, `textContent`
-       * will be used.
-       */
-      attrForItemTitle: {
-        type: String
-      }
-    },
+	      this.$.more.innerText = isMore ? 'more' : 'less';
+	    }
 
-    hostAttributes: {
-      'role': 'menu',
-      'tabindex': '0'
-    },
-
-    observers: [
-      '_updateMultiselectable(multi)'
-    ],
-
-    listeners: {
-      'focus': '_onFocus',
-      'keydown': '_onKeydown',
-      'iron-items-changed': '_onIronItemsChanged'
-    },
-
-    keyBindings: {
-      'up': '_onUpKey',
-      'down': '_onDownKey',
-      'esc': '_onEscKey',
-      'shift+tab:keydown': '_onShiftTabDown'
-    },
-
-    attached: function() {
-      this._resetTabindices();
-    },
-
-    /**
-     * Selects the given value. If the `multi` property is true, then the selected state of the
-     * `value` will be toggled; otherwise the `value` will be selected.
-     *
-     * @param {string|number} value the value to select.
-     */
-    select: function(value) {
-      // Cancel automatically focusing a default item if the menu received focus
-      // through a user action selecting a particular item.
-      if (this._defaultFocusAsync) {
-        this.cancelAsync(this._defaultFocusAsync);
-        this._defaultFocusAsync = null;
-      }
-      var item = this._valueToItem(value);
-      if (item && item.hasAttribute('disabled')) return;
-      this._setFocusedItem(item);
-      Polymer.IronMultiSelectableBehaviorImpl.select.apply(this, arguments);
-    },
-
-    /**
-     * Resets all tabindex attributes to the appropriate value based on the
-     * current selection state. The appropriate value is `0` (focusable) for
-     * the default selected item, and `-1` (not keyboard focusable) for all
-     * other items.
-     */
-    _resetTabindices: function() {
-      var selectedItem = this.multi ? (this.selectedItems && this.selectedItems[0]) : this.selectedItem;
-
-      this.items.forEach(function(item) {
-        item.setAttribute('tabindex', item === selectedItem ? '0' : '-1');
-      }, this);
-    },
-
-    /**
-     * Sets appropriate ARIA based on whether or not the menu is meant to be
-     * multi-selectable.
-     *
-     * @param {boolean} multi True if the menu should be multi-selectable.
-     */
-    _updateMultiselectable: function(multi) {
-      if (multi) {
-        this.setAttribute('aria-multiselectable', 'true');
-      } else {
-        this.removeAttribute('aria-multiselectable');
-      }
-    },
-
-    /**
-     * Given a KeyboardEvent, this method will focus the appropriate item in the
-     * menu (if there is a relevant item, and it is possible to focus it).
-     *
-     * @param {KeyboardEvent} event A KeyboardEvent.
-     */
-    _focusWithKeyboardEvent: function(event) {
-      for (var i = 0, item; item = this.items[i]; i++) {
-        var attr = this.attrForItemTitle || 'textContent';
-        var title = item[attr] || item.getAttribute(attr);
-
-        if (!item.hasAttribute('disabled') && title &&
-            title.trim().charAt(0).toLowerCase() === String.fromCharCode(event.keyCode).toLowerCase()) {
-          this._setFocusedItem(item);
-          break;
-        }
-      }
-    },
-
-    /**
-     * Focuses the previous item (relative to the currently focused item) in the
-     * menu, disabled items will be skipped.
-     * Loop until length + 1 to handle case of single item in menu.
-     */
-    _focusPrevious: function() {
-      var length = this.items.length;
-      var curFocusIndex = Number(this.indexOf(this.focusedItem));
-      for (var i = 1; i < length + 1; i++) {
-        var item = this.items[(curFocusIndex - i + length) % length];
-        if (!item.hasAttribute('disabled')) {
-          this._setFocusedItem(item);
-          return;
-        }
-      }
-    },
-
-    /**
-     * Focuses the next item (relative to the currently focused item) in the
-     * menu, disabled items will be skipped.
-     * Loop until length + 1 to handle case of single item in menu.
-     */
-    _focusNext: function() {
-      var length = this.items.length;
-      var curFocusIndex = Number(this.indexOf(this.focusedItem));
-      for (var i = 1; i < length + 1; i++) {
-        var item = this.items[(curFocusIndex + i) % length];
-        if (!item.hasAttribute('disabled')) {
-          this._setFocusedItem(item);
-          return;
-        }
-      }
-    },
-
-    /**
-     * Mutates items in the menu based on provided selection details, so that
-     * all items correctly reflect selection state.
-     *
-     * @param {Element} item An item in the menu.
-     * @param {boolean} isSelected True if the item should be shown in a
-     * selected state, otherwise false.
-     */
-    _applySelection: function(item, isSelected) {
-      if (isSelected) {
-        item.setAttribute('aria-selected', 'true');
-      } else {
-        item.removeAttribute('aria-selected');
-      }
-      Polymer.IronSelectableBehavior._applySelection.apply(this, arguments);
-    },
-
-    /**
-     * Discretely updates tabindex values among menu items as the focused item
-     * changes.
-     *
-     * @param {Element} focusedItem The element that is currently focused.
-     * @param {?Element} old The last element that was considered focused, if
-     * applicable.
-     */
-    _focusedItemChanged: function(focusedItem, old) {
-      old && old.setAttribute('tabindex', '-1');
-      if (focusedItem) {
-        focusedItem.setAttribute('tabindex', '0');
-        focusedItem.focus();
-      }
-    },
-
-    /**
-     * A handler that responds to mutation changes related to the list of items
-     * in the menu.
-     *
-     * @param {CustomEvent} event An event containing mutation records as its
-     * detail.
-     */
-    _onIronItemsChanged: function(event) {
-      if (event.detail.addedNodes.length) {
-        this._resetTabindices();
-      }
-    },
-
-    /**
-     * Handler that is called when a shift+tab keypress is detected by the menu.
-     *
-     * @param {CustomEvent} event A key combination event.
-     */
-    _onShiftTabDown: function(event) {
-      var oldTabIndex = this.getAttribute('tabindex');
-
-      Polymer.IronMenuBehaviorImpl._shiftTabPressed = true;
-
-      this._setFocusedItem(null);
-
-      this.setAttribute('tabindex', '-1');
-
-      this.async(function() {
-        this.setAttribute('tabindex', oldTabIndex);
-        Polymer.IronMenuBehaviorImpl._shiftTabPressed = false;
-        // NOTE(cdata): polymer/polymer#1305
-      }, 1);
-    },
-
-    /**
-     * Handler that is called when the menu receives focus.
-     *
-     * @param {FocusEvent} event A focus event.
-     */
-    _onFocus: function(event) {
-      if (Polymer.IronMenuBehaviorImpl._shiftTabPressed) {
-        // do not focus the menu itself
-        return;
-      }
-
-      // Do not focus the selected tab if the deepest target is part of the
-      // menu element's local DOM and is focusable.
-      var rootTarget = /** @type {?HTMLElement} */(
-          Polymer.dom(event).rootTarget);
-      if (rootTarget !== this && typeof rootTarget.tabIndex !== "undefined" && !this.isLightDescendant(rootTarget)) {
-        return;
-      }
-
-      // clear the cached focus item
-      this._defaultFocusAsync = this.async(function() {
-        // focus the selected item when the menu receives focus, or the first item
-        // if no item is selected
-        var selectedItem = this.multi ? (this.selectedItems && this.selectedItems[0]) : this.selectedItem;
-
-        this._setFocusedItem(null);
-
-        if (selectedItem) {
-          this._setFocusedItem(selectedItem);
-        } else if (this.items[0]) {
-          // We find the first none-disabled item (if one exists)
-          this._focusNext();
-        }
-      });
-    },
-
-    /**
-     * Handler that is called when the up key is pressed.
-     *
-     * @param {CustomEvent} event A key combination event.
-     */
-    _onUpKey: function(event) {
-      // up and down arrows moves the focus
-      this._focusPrevious();
-      event.detail.keyboardEvent.preventDefault();
-    },
-
-    /**
-     * Handler that is called when the down key is pressed.
-     *
-     * @param {CustomEvent} event A key combination event.
-     */
-    _onDownKey: function(event) {
-      this._focusNext();
-      event.detail.keyboardEvent.preventDefault();
-    },
-
-    /**
-     * Handler that is called when the esc key is pressed.
-     *
-     * @param {CustomEvent} event A key combination event.
-     */
-    _onEscKey: function(event) {
-      // esc blurs the control
-      this.focusedItem.blur();
-    },
-
-    /**
-     * Handler that is called when a keydown event is detected.
-     *
-     * @param {KeyboardEvent} event A keyboard event.
-     */
-    _onKeydown: function(event) {
-      if (!this.keyboardEventMatchesKeys(event, 'up down esc')) {
-        // all other keys focus the menu item starting with that character
-        this._focusWithKeyboardEvent(event);
-      }
-      event.stopPropagation();
-    },
-
-    // override _activateHandler
-    _activateHandler: function(event) {
-      Polymer.IronSelectableBehavior._activateHandler.call(this, event);
-      event.stopPropagation();
-    }
-  };
-
-  Polymer.IronMenuBehaviorImpl._shiftTabPressed = false;
-
-  /** @polymerBehavior Polymer.IronMenuBehavior */
-  Polymer.IronMenuBehavior = [
-    Polymer.IronMultiSelectableBehavior,
-    Polymer.IronA11yKeysBehavior,
-    Polymer.IronMenuBehaviorImpl
-  ];
+    });
 /**
    * `Polymer.IronMenubarBehavior` implements accessible menubar behavior.
    *
@@ -30956,253 +32660,6 @@ Polymer({
 
 	});
 /**
-   * `Polymer.NeonAnimatableBehavior` is implemented by elements containing animations for use with
-   * elements implementing `Polymer.NeonAnimationRunnerBehavior`.
-   * @polymerBehavior
-   */
-  Polymer.NeonAnimatableBehavior = {
-
-    properties: {
-
-      /**
-       * Animation configuration. See README for more info.
-       */
-      animationConfig: {
-        type: Object
-      },
-
-      /**
-       * Convenience property for setting an 'entry' animation. Do not set `animationConfig.entry`
-       * manually if using this. The animated node is set to `this` if using this property.
-       */
-      entryAnimation: {
-        observer: '_entryAnimationChanged',
-        type: String
-      },
-
-      /**
-       * Convenience property for setting an 'exit' animation. Do not set `animationConfig.exit`
-       * manually if using this. The animated node is set to `this` if using this property.
-       */
-      exitAnimation: {
-        observer: '_exitAnimationChanged',
-        type: String
-      }
-
-    },
-
-    _entryAnimationChanged: function() {
-      this.animationConfig = this.animationConfig || {};
-      this.animationConfig['entry'] = [{
-        name: this.entryAnimation,
-        node: this
-      }];
-    },
-
-    _exitAnimationChanged: function() {
-      this.animationConfig = this.animationConfig || {};
-      this.animationConfig['exit'] = [{
-        name: this.exitAnimation,
-        node: this
-      }];
-    },
-
-    _copyProperties: function(config1, config2) {
-      // shallowly copy properties from config2 to config1
-      for (var property in config2) {
-        config1[property] = config2[property];
-      }
-    },
-
-    _cloneConfig: function(config) {
-      var clone = {
-        isClone: true
-      };
-      this._copyProperties(clone, config);
-      return clone;
-    },
-
-    _getAnimationConfigRecursive: function(type, map, allConfigs) {
-      if (!this.animationConfig) {
-        return;
-      }
-
-      if(this.animationConfig.value && typeof this.animationConfig.value === 'function') {
-      	this._warn(this._logf('playAnimation', "Please put 'animationConfig' inside of your components 'properties' object instead of outside of it."));
-      	return;
-      }
-
-      // type is optional
-      var thisConfig;
-      if (type) {
-        thisConfig = this.animationConfig[type];
-      } else {
-        thisConfig = this.animationConfig;
-      }
-
-      if (!Array.isArray(thisConfig)) {
-        thisConfig = [thisConfig];
-      }
-
-      // iterate animations and recurse to process configurations from child nodes
-      if (thisConfig) {
-        for (var config, index = 0; config = thisConfig[index]; index++) {
-          if (config.animatable) {
-            config.animatable._getAnimationConfigRecursive(config.type || type, map, allConfigs);
-          } else {
-            if (config.id) {
-              var cachedConfig = map[config.id];
-              if (cachedConfig) {
-                // merge configurations with the same id, making a clone lazily
-                if (!cachedConfig.isClone) {
-                  map[config.id] = this._cloneConfig(cachedConfig)
-                  cachedConfig = map[config.id];
-                }
-                this._copyProperties(cachedConfig, config);
-              } else {
-                // put any configs with an id into a map
-                map[config.id] = config;
-              }
-            } else {
-              allConfigs.push(config);
-            }
-          }
-        }
-      }
-    },
-
-    /**
-     * An element implementing `Polymer.NeonAnimationRunnerBehavior` calls this method to configure
-     * an animation with an optional type. Elements implementing `Polymer.NeonAnimatableBehavior`
-     * should define the property `animationConfig`, which is either a configuration object
-     * or a map of animation type to array of configuration objects.
-     */
-    getAnimationConfig: function(type) {
-      var map = {};
-      var allConfigs = [];
-      this._getAnimationConfigRecursive(type, map, allConfigs);
-      // append the configurations saved in the map to the array
-      for (var key in map) {
-        allConfigs.push(map[key]);
-      }
-      return allConfigs;
-    }
-
-  };
-/**
-   * `Polymer.NeonAnimationRunnerBehavior` adds a method to run animations.
-   *
-   * @polymerBehavior Polymer.NeonAnimationRunnerBehavior
-   */
-  Polymer.NeonAnimationRunnerBehaviorImpl = {
-
-    _configureAnimations: function(configs) {
-      var results = [];
-      if (configs.length > 0) {
-        for (var config, index = 0; config = configs[index]; index++) {
-          var neonAnimation = document.createElement(config.name);
-          // is this element actually a neon animation?
-          if (neonAnimation.isNeonAnimation) {
-            var result = null;
-            // configuration or play could fail if polyfills aren't loaded
-            try {
-              result = neonAnimation.configure(config);
-              // Check if we have an Effect rather than an Animation
-              if (typeof result.cancel != 'function') { 
-                result = document.timeline.play(result);
-              }
-            } catch (e) {
-              result = null;
-              console.warn('Couldnt play', '(', config.name, ').', e);
-            }
-            if (result) {
-              results.push({
-                neonAnimation: neonAnimation,
-                config: config,
-                animation: result,
-              });
-            }
-          } else {
-            console.warn(this.is + ':', config.name, 'not found!');
-          }
-        }
-      }
-      return results;
-    },
-
-    _shouldComplete: function(activeEntries) {
-      var finished = true;
-      for (var i = 0; i < activeEntries.length; i++) {
-        if (activeEntries[i].animation.playState != 'finished') {
-          finished = false;
-          break;
-        }
-      }
-      return finished;
-    },
-
-    _complete: function(activeEntries) {
-      for (var i = 0; i < activeEntries.length; i++) {
-        activeEntries[i].neonAnimation.complete(activeEntries[i].config);
-      }
-      for (var i = 0; i < activeEntries.length; i++) {
-        activeEntries[i].animation.cancel();
-      }
-    },
-
-    /**
-     * Plays an animation with an optional `type`.
-     * @param {string=} type
-     * @param {!Object=} cookie
-     */
-    playAnimation: function(type, cookie) {
-      var configs = this.getAnimationConfig(type);
-      if (!configs) {
-        return;
-      }
-      this._active = this._active || {};
-      if (this._active[type]) {
-        this._complete(this._active[type]);
-        delete this._active[type];
-      }
-
-      var activeEntries = this._configureAnimations(configs);
-
-      if (activeEntries.length == 0) {
-        this.fire('neon-animation-finish', cookie, {bubbles: false});
-        return;
-      }
-
-      this._active[type] = activeEntries;
-
-      for (var i = 0; i < activeEntries.length; i++) {
-        activeEntries[i].animation.onfinish = function() {
-          if (this._shouldComplete(activeEntries)) {
-            this._complete(activeEntries);
-            delete this._active[type];
-            this.fire('neon-animation-finish', cookie, {bubbles: false});
-          }
-        }.bind(this);
-      }
-    },
-
-    /**
-     * Cancels the currently running animations.
-     */
-    cancelAnimation: function() {
-      for (var k in this._animations) {
-        this._animations[k].cancel();
-      }
-      this._animations = {};
-    }
-  };
-
-  /** @polymerBehavior Polymer.NeonAnimationRunnerBehavior */
-  Polymer.NeonAnimationRunnerBehavior = [
-    Polymer.NeonAnimatableBehavior,
-    Polymer.NeonAnimationRunnerBehaviorImpl
-  ];
-/**
    * Use `Polymer.NeonAnimationBehavior` to implement an animation.
    * @polymerBehavior
    */
@@ -31285,8 +32742,8 @@ Polymer({
 //     See the License for the specific language governing permissions and
 // limitations under the License.
 
-!function(a,b){var c={},d={},e={},f=null;!function(a,b){function c(a){if("number"==typeof a)return a;var b={};for(var c in a)b[c]=a[c];return b}function d(){this._delay=0,this._endDelay=0,this._fill="none",this._iterationStart=0,this._iterations=1,this._duration=0,this._playbackRate=1,this._direction="normal",this._easing="linear",this._easingFunction=w}function e(){return a.isDeprecated("Invalid timing inputs","2016-03-02","TypeError exceptions will be thrown instead.",!0)}function f(b,c,e){var f=new d;return c&&(f.fill="both",f.duration="auto"),"number"!=typeof b||isNaN(b)?void 0!==b&&Object.getOwnPropertyNames(b).forEach(function(c){if("auto"!=b[c]){if(("number"==typeof f[c]||"duration"==c)&&("number"!=typeof b[c]||isNaN(b[c])))return;if("fill"==c&&-1==u.indexOf(b[c]))return;if("direction"==c&&-1==v.indexOf(b[c]))return;if("playbackRate"==c&&1!==b[c]&&a.isDeprecated("AnimationEffectTiming.playbackRate","2014-11-28","Use Animation.playbackRate instead."))return;f[c]=b[c]}}):f.duration=b,f}function g(a){return"number"==typeof a&&(a=isNaN(a)?{duration:0}:{duration:a}),a}function h(b,c){return b=a.numericTimingToObject(b),f(b,c)}function i(a,b,c,d){return 0>a||a>1||0>c||c>1?w:function(e){function f(a,b,c){return 3*a*(1-c)*(1-c)*c+3*b*(1-c)*c*c+c*c*c}if(0==e||1==e)return e;for(var g=0,h=1;;){var i=(g+h)/2,j=f(a,c,i);if(Math.abs(e-j)<1e-4)return f(b,d,i);e>j?g=i:h=i}}}function j(a,b){return function(c){if(c>=1)return 1;var d=1/a;return c+=b*d,c-c%d}}function k(a){B||(B=document.createElement("div").style),B.animationTimingFunction="",B.animationTimingFunction=a;var b=B.animationTimingFunction;if(""==b&&e())throw new TypeError(a+" is not a valid value for easing");var c=D.exec(b);if(c)return i.apply(this,c.slice(1).map(Number));var d=E.exec(b);if(d)return j(Number(d[1]),{start:x,middle:y,end:z}[d[2]]);var f=A[b];return f?f:w}function l(a){return Math.abs(m(a)/a.playbackRate)}function m(a){return a.duration*a.iterations}function n(a,b,c){return null==b?F:b<c.delay?G:b>=c.delay+a?H:I}function o(a,b,c,d,e){switch(d){case G:return"backwards"==b||"both"==b?0:null;case I:return c-e;case H:return"forwards"==b||"both"==b?a:null;case F:return null}}function p(a,b,c,d){return(d.playbackRate<0?b-a:b)*d.playbackRate+c}function q(a,b,c,d,e){return c===1/0||c===-(1/0)||c-d==b&&e.iterations&&(e.iterations+e.iterationStart)%1==0?a:c%a}function r(a,b,c,d){return 0===c?0:b==a?d.iterationStart+d.iterations-1:Math.floor(c/a)}function s(a,b,c,d){var e=a%2>=1,f="normal"==d.direction||d.direction==(e?"alternate-reverse":"alternate"),g=f?c:b-c,h=g/b;return b*d._easingFunction(h)}function t(a,b,c){var d=n(a,b,c),e=o(a,c.fill,b,d,c.delay);if(null===e)return null;if(0===a)return d===G?0:1;var f=c.iterationStart*c.duration,g=p(a,e,f,c),h=q(c.duration,m(c),g,f,c),i=r(c.duration,h,g,c);return s(i,c.duration,h,c)/c.duration}var u="backwards|forwards|both|none".split("|"),v="reverse|alternate|alternate-reverse".split("|"),w=function(a){return a};d.prototype={_setMember:function(b,c){this["_"+b]=c,this._effect&&(this._effect._timingInput[b]=c,this._effect._timing=a.normalizeTimingInput(this._effect._timingInput),this._effect.activeDuration=a.calculateActiveDuration(this._effect._timing),this._effect._animation&&this._effect._animation._rebuildUnderlyingAnimation())},get playbackRate(){return this._playbackRate},set delay(a){this._setMember("delay",a)},get delay(){return this._delay},set endDelay(a){this._setMember("endDelay",a)},get endDelay(){return this._endDelay},set fill(a){this._setMember("fill",a)},get fill(){return this._fill},set iterationStart(a){if((isNaN(a)||0>a)&&e())throw new TypeError("iterationStart must be a non-negative number, received: "+timing.iterationStart);this._setMember("iterationStart",a)},get iterationStart(){return this._iterationStart},set duration(a){if("auto"!=a&&(isNaN(a)||0>a)&&e())throw new TypeError("duration must be non-negative or auto, received: "+a);this._setMember("duration",a)},get duration(){return this._duration},set direction(a){this._setMember("direction",a)},get direction(){return this._direction},set easing(a){this._easingFunction=k(a),this._setMember("easing",a)},get easing(){return this._easing},set iterations(a){if((isNaN(a)||0>a)&&e())throw new TypeError("iterations must be non-negative, received: "+a);this._setMember("iterations",a)},get iterations(){return this._iterations}};var x=1,y=.5,z=0,A={ease:i(.25,.1,.25,1),"ease-in":i(.42,0,1,1),"ease-out":i(0,0,.58,1),"ease-in-out":i(.42,0,.58,1),"step-start":j(1,x),"step-middle":j(1,y),"step-end":j(1,z)},B=null,C="\\s*(-?\\d+\\.?\\d*|-?\\.\\d+)\\s*",D=new RegExp("cubic-bezier\\("+C+","+C+","+C+","+C+"\\)"),E=/steps\(\s*(\d+)\s*,\s*(start|middle|end)\s*\)/,F=0,G=1,H=2,I=3;a.cloneTimingInput=c,a.makeTiming=f,a.numericTimingToObject=g,a.normalizeTimingInput=h,a.calculateActiveDuration=l,a.calculateTimeFraction=t,a.calculatePhase=n,a.toTimingFunction=k}(c,f),function(a,b){function c(a,b){return a in j?j[a][b]||b:b}function d(a,b,d){var e=g[a];if(e){h.style[a]=b;for(var f in e){var i=e[f],j=h.style[i];d[i]=c(i,j)}}else d[a]=c(a,b)}function e(a){var b=[];for(var c in a)if(!(c in["easing","offset","composite"])){var d=a[c];Array.isArray(d)||(d=[d]);for(var e,f=d.length,g=0;f>g;g++)e={},"offset"in a?e.offset=a.offset:1==f?e.offset=1:e.offset=g/(f-1),"easing"in a&&(e.easing=a.easing),"composite"in a&&(e.composite=a.composite),e[c]=d[g],b.push(e)}return b.sort(function(a,b){return a.offset-b.offset}),b}function f(a){function b(){var a=c.length;null==c[a-1].offset&&(c[a-1].offset=1),a>1&&null==c[0].offset&&(c[0].offset=0);for(var b=0,d=c[0].offset,e=1;a>e;e++){var f=c[e].offset;if(null!=f){for(var g=1;e-b>g;g++)c[b+g].offset=d+(f-d)*g/(e-b);b=e,d=f}}}if(null==a)return[];window.Symbol&&Symbol.iterator&&Array.prototype.from&&a[Symbol.iterator]&&(a=Array.from(a)),Array.isArray(a)||(a=e(a));for(var c=a.map(function(a){var b={};for(var c in a){var e=a[c];if("offset"==c){if(null!=e&&(e=Number(e),!isFinite(e)))throw new TypeError("keyframe offsets must be numbers.")}else{if("composite"==c)throw{type:DOMException.NOT_SUPPORTED_ERR,name:"NotSupportedError",message:"add compositing is not supported"};e=""+e}d(c,e,b)}return void 0==b.offset&&(b.offset=null),b}),f=!0,g=-(1/0),h=0;h<c.length;h++){var i=c[h].offset;if(null!=i){if(g>i)throw{code:DOMException.INVALID_MODIFICATION_ERR,name:"InvalidModificationError",message:"Keyframes are not loosely sorted by offset. Sort or specify offsets."};g=i}else f=!1}return c=c.filter(function(a){return a.offset>=0&&a.offset<=1}),f||b(),c}var g={background:["backgroundImage","backgroundPosition","backgroundSize","backgroundRepeat","backgroundAttachment","backgroundOrigin","backgroundClip","backgroundColor"],border:["borderTopColor","borderTopStyle","borderTopWidth","borderRightColor","borderRightStyle","borderRightWidth","borderBottomColor","borderBottomStyle","borderBottomWidth","borderLeftColor","borderLeftStyle","borderLeftWidth"],borderBottom:["borderBottomWidth","borderBottomStyle","borderBottomColor"],borderColor:["borderTopColor","borderRightColor","borderBottomColor","borderLeftColor"],borderLeft:["borderLeftWidth","borderLeftStyle","borderLeftColor"],borderRadius:["borderTopLeftRadius","borderTopRightRadius","borderBottomRightRadius","borderBottomLeftRadius"],borderRight:["borderRightWidth","borderRightStyle","borderRightColor"],borderTop:["borderTopWidth","borderTopStyle","borderTopColor"],borderWidth:["borderTopWidth","borderRightWidth","borderBottomWidth","borderLeftWidth"],flex:["flexGrow","flexShrink","flexBasis"],font:["fontFamily","fontSize","fontStyle","fontVariant","fontWeight","lineHeight"],margin:["marginTop","marginRight","marginBottom","marginLeft"],outline:["outlineColor","outlineStyle","outlineWidth"],padding:["paddingTop","paddingRight","paddingBottom","paddingLeft"]},h=document.createElementNS("http://www.w3.org/1999/xhtml","div"),i={thin:"1px",medium:"3px",thick:"5px"},j={borderBottomWidth:i,borderLeftWidth:i,borderRightWidth:i,borderTopWidth:i,fontSize:{"xx-small":"60%","x-small":"75%",small:"89%",medium:"100%",large:"120%","x-large":"150%","xx-large":"200%"},fontWeight:{normal:"400",bold:"700"},outlineWidth:i,textShadow:{none:"0px 0px 0px transparent"},boxShadow:{none:"0px 0px 0px 0px transparent"}};a.convertToArrayForm=e,a.normalizeKeyframes=f}(c,f),function(a){var b={};a.isDeprecated=function(a,c,d,e){var f=e?"are":"is",g=new Date,h=new Date(c);return h.setMonth(h.getMonth()+3),h>g?(a in b||console.warn("Web Animations: "+a+" "+f+" deprecated and will stop working on "+h.toDateString()+". "+d),b[a]=!0,!1):!0},a.deprecated=function(b,c,d,e){var f=e?"are":"is";if(a.isDeprecated(b,c,d,e))throw new Error(b+" "+f+" no longer supported. "+d)}}(c),function(){if(document.documentElement.animate){var a=document.documentElement.animate([],0),b=!0;if(a&&(b=!1,"play|currentTime|pause|reverse|playbackRate|cancel|finish|startTime|playState".split("|").forEach(function(c){void 0===a[c]&&(b=!0)})),!b)return}!function(a,b,c){function d(a){for(var b={},c=0;c<a.length;c++)for(var d in a[c])if("offset"!=d&&"easing"!=d&&"composite"!=d){var e={offset:a[c].offset,easing:a[c].easing,value:a[c][d]};b[d]=b[d]||[],b[d].push(e)}for(var f in b){var g=b[f];if(0!=g[0].offset||1!=g[g.length-1].offset)throw{type:DOMException.NOT_SUPPORTED_ERR,name:"NotSupportedError",message:"Partial keyframes are not supported"}}return b}function e(c){var d=[];for(var e in c)for(var f=c[e],g=0;g<f.length-1;g++){var h=f[g].offset,i=f[g+1].offset,j=f[g].value,k=f[g+1].value,l=f[g].easing;h==i&&(1==i?j=k:k=j),d.push({startTime:h,endTime:i,easing:a.toTimingFunction(l?l:"linear"),property:e,interpolation:b.propertyInterpolation(e,j,k)})}return d.sort(function(a,b){return a.startTime-b.startTime}),d}b.convertEffectInput=function(c){var f=a.normalizeKeyframes(c),g=d(f),h=e(g);return function(a,c){if(null!=c)h.filter(function(a){return 0>=c&&0==a.startTime||c>=1&&1==a.endTime||c>=a.startTime&&c<=a.endTime}).forEach(function(d){var e=c-d.startTime,f=d.endTime-d.startTime,g=0==f?0:d.easing(e/f);b.apply(a,d.property,d.interpolation(g))});else for(var d in g)"offset"!=d&&"easing"!=d&&"composite"!=d&&b.clear(a,d)}}}(c,d,f),function(a,b,c){function d(a){return a.replace(/-(.)/g,function(a,b){return b.toUpperCase()})}function e(a,b,c){h[c]=h[c]||[],h[c].push([a,b])}function f(a,b,c){for(var f=0;f<c.length;f++){var g=c[f];e(a,b,d(g))}}function g(c,e,f){var g=c;/-/.test(c)&&!a.isDeprecated("Hyphenated property names","2016-03-22","Use camelCase instead.",!0)&&(g=d(c)),"initial"!=e&&"initial"!=f||("initial"==e&&(e=i[g]),"initial"==f&&(f=i[g]));for(var j=e==f?[]:h[g],k=0;j&&k<j.length;k++){var l=j[k][0](e),m=j[k][0](f);if(void 0!==l&&void 0!==m){var n=j[k][1](l,m);if(n){var o=b.Interpolation.apply(null,n);return function(a){return 0==a?e:1==a?f:o(a)}}}}return b.Interpolation(!1,!0,function(a){return a?f:e})}var h={};b.addPropertiesHandler=f;var i={backgroundColor:"transparent",backgroundPosition:"0% 0%",borderBottomColor:"currentColor",borderBottomLeftRadius:"0px",borderBottomRightRadius:"0px",borderBottomWidth:"3px",borderLeftColor:"currentColor",borderLeftWidth:"3px",borderRightColor:"currentColor",borderRightWidth:"3px",borderSpacing:"2px",borderTopColor:"currentColor",borderTopLeftRadius:"0px",borderTopRightRadius:"0px",borderTopWidth:"3px",bottom:"auto",clip:"rect(0px, 0px, 0px, 0px)",color:"black",fontSize:"100%",fontWeight:"400",height:"auto",left:"auto",letterSpacing:"normal",lineHeight:"120%",marginBottom:"0px",marginLeft:"0px",marginRight:"0px",marginTop:"0px",maxHeight:"none",maxWidth:"none",minHeight:"0px",minWidth:"0px",opacity:"1.0",outlineColor:"invert",outlineOffset:"0px",outlineWidth:"3px",paddingBottom:"0px",paddingLeft:"0px",paddingRight:"0px",paddingTop:"0px",right:"auto",textIndent:"0px",textShadow:"0px 0px 0px transparent",top:"auto",transform:"",verticalAlign:"0px",visibility:"visible",width:"auto",wordSpacing:"normal",zIndex:"auto"};b.propertyInterpolation=g}(c,d,f),function(a,b,c){function d(b){var c=a.calculateActiveDuration(b),d=function(d){return a.calculateTimeFraction(c,d,b)};return d._totalDuration=b.delay+c+b.endDelay,d._isCurrent=function(d){var e=a.calculatePhase(c,d,b);return e===PhaseActive||e===PhaseBefore},d}b.KeyframeEffect=function(c,e,f,g){var h,i=d(a.normalizeTimingInput(f)),j=b.convertEffectInput(e),k=function(){j(c,h)};return k._update=function(a){return h=i(a),null!==h},k._clear=function(){j(c,null)},k._hasSameTarget=function(a){return c===a},k._isCurrent=i._isCurrent,k._totalDuration=i._totalDuration,k._id=g,k},b.NullEffect=function(a){var b=function(){a&&(a(),a=null)};return b._update=function(){return null},b._totalDuration=0,b._isCurrent=function(){return!1},b._hasSameTarget=function(){return!1},b}}(c,d,f),function(a,b){a.apply=function(b,c,d){b.style[a.propertyName(c)]=d},a.clear=function(b,c){b.style[a.propertyName(c)]=""}}(d,f),function(a){window.Element.prototype.animate=function(b,c){var d="";return c&&c.id&&(d=c.id),a.timeline._play(a.KeyframeEffect(this,b,c,d))}}(d),function(a,b){function c(a,b,d){if("number"==typeof a&&"number"==typeof b)return a*(1-d)+b*d;if("boolean"==typeof a&&"boolean"==typeof b)return.5>d?a:b;if(a.length==b.length){for(var e=[],f=0;f<a.length;f++)e.push(c(a[f],b[f],d));return e}throw"Mismatched interpolation arguments "+a+":"+b}a.Interpolation=function(a,b,d){return function(e){return d(c(a,b,e))}}}(d,f),function(a,b,c){a.sequenceNumber=0;var d=function(a,b,c){this.target=a,this.currentTime=b,this.timelineTime=c,this.type="finish",this.bubbles=!1,this.cancelable=!1,this.currentTarget=a,this.defaultPrevented=!1,this.eventPhase=Event.AT_TARGET,this.timeStamp=Date.now()};b.Animation=function(b){this.id="",b&&b._id&&(this.id=b._id),this._sequenceNumber=a.sequenceNumber++,this._currentTime=0,this._startTime=null,this._paused=!1,this._playbackRate=1,this._inTimeline=!0,this._finishedFlag=!0,this.onfinish=null,this._finishHandlers=[],this._effect=b,this._inEffect=this._effect._update(0),this._idle=!0,this._currentTimePending=!1},b.Animation.prototype={_ensureAlive:function(){this.playbackRate<0&&0===this.currentTime?this._inEffect=this._effect._update(-1):this._inEffect=this._effect._update(this.currentTime),this._inTimeline||!this._inEffect&&this._finishedFlag||(this._inTimeline=!0,b.timeline._animations.push(this))},_tickCurrentTime:function(a,b){a!=this._currentTime&&(this._currentTime=a,this._isFinished&&!b&&(this._currentTime=this._playbackRate>0?this._totalDuration:0),this._ensureAlive())},get currentTime(){return this._idle||this._currentTimePending?null:this._currentTime},set currentTime(a){a=+a,isNaN(a)||(b.restart(),this._paused||null==this._startTime||(this._startTime=this._timeline.currentTime-a/this._playbackRate),this._currentTimePending=!1,this._currentTime!=a&&(this._tickCurrentTime(a,!0),b.invalidateEffects()))},get startTime(){return this._startTime},set startTime(a){a=+a,isNaN(a)||this._paused||this._idle||(this._startTime=a,this._tickCurrentTime((this._timeline.currentTime-this._startTime)*this.playbackRate),b.invalidateEffects())},get playbackRate(){return this._playbackRate},set playbackRate(a){if(a!=this._playbackRate){var b=this.currentTime;this._playbackRate=a,this._startTime=null,"paused"!=this.playState&&"idle"!=this.playState&&this.play(),null!=b&&(this.currentTime=b)}},get _isFinished(){return!this._idle&&(this._playbackRate>0&&this._currentTime>=this._totalDuration||this._playbackRate<0&&this._currentTime<=0)},get _totalDuration(){return this._effect._totalDuration},get playState(){return this._idle?"idle":null==this._startTime&&!this._paused&&0!=this.playbackRate||this._currentTimePending?"pending":this._paused?"paused":this._isFinished?"finished":"running"},play:function(){this._paused=!1,(this._isFinished||this._idle)&&(this._currentTime=this._playbackRate>0?0:this._totalDuration,this._startTime=null),this._finishedFlag=!1,this._idle=!1,this._ensureAlive(),b.invalidateEffects()},pause:function(){this._isFinished||this._paused||this._idle||(this._currentTimePending=!0),this._startTime=null,this._paused=!0},finish:function(){this._idle||(this.currentTime=this._playbackRate>0?this._totalDuration:0,this._startTime=this._totalDuration-this.currentTime,this._currentTimePending=!1,b.invalidateEffects())},cancel:function(){this._inEffect&&(this._inEffect=!1,this._idle=!0,this._finishedFlag=!0,this.currentTime=0,this._startTime=null,this._effect._update(null),b.invalidateEffects())},reverse:function(){this.playbackRate*=-1,this.play()},addEventListener:function(a,b){"function"==typeof b&&"finish"==a&&this._finishHandlers.push(b)},removeEventListener:function(a,b){if("finish"==a){var c=this._finishHandlers.indexOf(b);c>=0&&this._finishHandlers.splice(c,1)}},_fireEvents:function(a){if(this._isFinished){if(!this._finishedFlag){var b=new d(this,this._currentTime,a),c=this._finishHandlers.concat(this.onfinish?[this.onfinish]:[]);setTimeout(function(){c.forEach(function(a){a.call(b.target,b)})},0),this._finishedFlag=!0}}else this._finishedFlag=!1},_tick:function(a,b){this._idle||this._paused||(null==this._startTime?b&&(this.startTime=a-this._currentTime/this.playbackRate):this._isFinished||this._tickCurrentTime((a-this._startTime)*this.playbackRate)),b&&(this._currentTimePending=!1,this._fireEvents(a))},get _needsTick(){return this.playState in{pending:1,running:1}||!this._finishedFlag}}}(c,d,f),function(a,b,c){function d(a){var b=j;j=[],a<p.currentTime&&(a=p.currentTime),h(a,!0),b.forEach(function(b){b[1](a)}),g(),l=void 0}function e(a,b){return a._sequenceNumber-b._sequenceNumber}function f(){this._animations=[],this.currentTime=window.performance&&performance.now?performance.now():0}function g(){o.forEach(function(a){a()}),o.length=0}function h(a,c){n=!1;var d=b.timeline;d.currentTime=a,d._animations.sort(e),m=!1;var f=d._animations;d._animations=[];var g=[],h=[];f=f.filter(function(b){b._tick(a,c),b._inEffect?h.push(b._effect):g.push(b._effect),b._needsTick&&(m=!0);var d=b._inEffect||b._needsTick;return b._inTimeline=d,d}),o.push.apply(o,g),o.push.apply(o,h),d._animations.push.apply(d._animations,f),m&&requestAnimationFrame(function(){})}var i=window.requestAnimationFrame,j=[],k=0;window.requestAnimationFrame=function(a){var b=k++;return 0==j.length&&i(d),j.push([b,a]),b},window.cancelAnimationFrame=function(a){j.forEach(function(b){b[0]==a&&(b[1]=function(){})})},f.prototype={_play:function(c){c._timing=a.normalizeTimingInput(c.timing);var d=new b.Animation(c);return d._idle=!1,d._timeline=this,this._animations.push(d),b.restart(),b.invalidateEffects(),d}};var l=void 0,m=!1,n=!1;b.restart=function(){return m||(m=!0,requestAnimationFrame(function(){}),n=!0),n},b.invalidateEffects=function(){h(b.timeline.currentTime,!1),g()};var o=[],p=new f;b.timeline=p}(c,d,f),function(a){function b(a,b){var c=a.exec(b);return c?(c=a.ignoreCase?c[0].toLowerCase():c[0],[c,b.substr(c.length)]):void 0}function c(a,b){b=b.replace(/^\s*/,"");var c=a(b);return c?[c[0],c[1].replace(/^\s*/,"")]:void 0}function d(a,d,e){a=c.bind(null,a);for(var f=[];;){var g=a(e);if(!g)return[f,e];if(f.push(g[0]),e=g[1],g=b(d,e),!g||""==g[1])return[f,e];e=g[1]}}function e(a,b){for(var c=0,d=0;d<b.length&&(!/\s|,/.test(b[d])||0!=c);d++)if("("==b[d])c++;else if(")"==b[d]&&(c--,0==c&&d++,0>=c))break;var e=a(b.substr(0,d));return void 0==e?void 0:[e,b.substr(d)]}function f(a,b){for(var c=a,d=b;c&&d;)c>d?c%=d:d%=c;return c=a*b/(c+d)}function g(a){return function(b){var c=a(b);return c&&(c[0]=void 0),c}}function h(a,b){return function(c){var d=a(c);return d?d:[b,c]}}function i(b,c){for(var d=[],e=0;e<b.length;e++){var f=a.consumeTrimmed(b[e],c);if(!f||""==f[0])return;void 0!==f[0]&&d.push(f[0]),c=f[1]}return""==c?d:void 0}function j(a,b,c,d,e){for(var g=[],h=[],i=[],j=f(d.length,e.length),k=0;j>k;k++){var l=b(d[k%d.length],e[k%e.length]);if(!l)return;g.push(l[0]),h.push(l[1]),i.push(l[2])}return[g,h,function(b){var d=b.map(function(a,b){return i[b](a)}).join(c);return a?a(d):d}]}function k(a,b,c){for(var d=[],e=[],f=[],g=0,h=0;h<c.length;h++)if("function"==typeof c[h]){var i=c[h](a[g],b[g++]);d.push(i[0]),e.push(i[1]),f.push(i[2])}else!function(a){d.push(!1),e.push(!1),f.push(function(){return c[a]})}(h);return[d,e,function(a){for(var b="",c=0;c<a.length;c++)b+=f[c](a[c]);return b}]}a.consumeToken=b,a.consumeTrimmed=c,a.consumeRepeated=d,a.consumeParenthesised=e,a.ignore=g,a.optional=h,a.consumeList=i,a.mergeNestedRepeated=j.bind(null,null),a.mergeWrappedNestedRepeated=j,a.mergeList=k}(d),function(a){function b(b){function c(b){var c=a.consumeToken(/^inset/i,b);if(c)return d.inset=!0,c;var c=a.consumeLengthOrPercent(b);if(c)return d.lengths.push(c[0]),c;var c=a.consumeColor(b);return c?(d.color=c[0],c):void 0}var d={inset:!1,lengths:[],color:null},e=a.consumeRepeated(c,/^/,b);return e&&e[0].length?[d,e[1]]:void 0}function c(c){var d=a.consumeRepeated(b,/^,/,c);return d&&""==d[1]?d[0]:void 0}function d(b,c){for(;b.lengths.length<Math.max(b.lengths.length,c.lengths.length);)b.lengths.push({px:0});for(;c.lengths.length<Math.max(b.lengths.length,c.lengths.length);)c.lengths.push({px:0});if(b.inset==c.inset&&!!b.color==!!c.color){for(var d,e=[],f=[[],0],g=[[],0],h=0;h<b.lengths.length;h++){var i=a.mergeDimensions(b.lengths[h],c.lengths[h],2==h);f[0].push(i[0]),g[0].push(i[1]),e.push(i[2])}if(b.color&&c.color){var j=a.mergeColors(b.color,c.color);f[1]=j[0],g[1]=j[1],d=j[2]}return[f,g,function(a){for(var c=b.inset?"inset ":" ",f=0;f<e.length;f++)c+=e[f](a[0][f])+" ";return d&&(c+=d(a[1])),c}]}}function e(b,c,d,e){function f(a){return{inset:a,color:[0,0,0,0],lengths:[{px:0},{px:0},{px:0},{px:0}]}}for(var g=[],h=[],i=0;i<d.length||i<e.length;i++){var j=d[i]||f(e[i].inset),k=e[i]||f(d[i].inset);g.push(j),h.push(k)}return a.mergeNestedRepeated(b,c,g,h)}var f=e.bind(null,d,", ");a.addPropertiesHandler(c,f,["box-shadow","text-shadow"])}(d),function(a,b){function c(a){return a.toFixed(3).replace(".000","")}function d(a,b,c){return Math.min(b,Math.max(a,c))}function e(a){return/^\s*[-+]?(\d*\.)?\d+\s*$/.test(a)?Number(a):void 0}function f(a,b){return[a,b,c]}function g(a,b){return 0!=a?i(0,1/0)(a,b):void 0}function h(a,b){return[a,b,function(a){return Math.round(d(1,1/0,a))}]}function i(a,b){return function(e,f){return[e,f,function(e){return c(d(a,b,e))}]}}function j(a,b){return[a,b,Math.round]}a.clamp=d,a.addPropertiesHandler(e,i(0,1/0),["border-image-width","line-height"]),a.addPropertiesHandler(e,i(0,1),["opacity","shape-image-threshold"]),a.addPropertiesHandler(e,g,["flex-grow","flex-shrink"]),a.addPropertiesHandler(e,h,["orphans","widows"]),a.addPropertiesHandler(e,j,["z-index"]),a.parseNumber=e,a.mergeNumbers=f,a.numberToString=c}(d,f),function(a,b){function c(a,b){return"visible"==a||"visible"==b?[0,1,function(c){return 0>=c?a:c>=1?b:"visible"}]:void 0}a.addPropertiesHandler(String,c,["visibility"])}(d),function(a,b){function c(a){a=a.trim(),f.fillStyle="#000",f.fillStyle=a;var b=f.fillStyle;if(f.fillStyle="#fff",f.fillStyle=a,b==f.fillStyle){f.fillRect(0,0,1,1);var c=f.getImageData(0,0,1,1).data;f.clearRect(0,0,1,1);var d=c[3]/255;return[c[0]*d,c[1]*d,c[2]*d,d]}}function d(b,c){return[b,c,function(b){function c(a){return Math.max(0,Math.min(255,a))}if(b[3])for(var d=0;3>d;d++)b[d]=Math.round(c(b[d]/b[3]));return b[3]=a.numberToString(a.clamp(0,1,b[3])),"rgba("+b.join(",")+")"}]}var e=document.createElementNS("http://www.w3.org/1999/xhtml","canvas");e.width=e.height=1;var f=e.getContext("2d");a.addPropertiesHandler(c,d,["background-color","border-bottom-color","border-left-color","border-right-color","border-top-color","color","outline-color","text-decoration-color"]),a.consumeColor=a.consumeParenthesised.bind(null,c),a.mergeColors=d}(d,f),function(a,b){function c(a,b){if(b=b.trim().toLowerCase(),"0"==b&&"px".search(a)>=0)return{px:0};if(/^[^(]*$|^calc/.test(b)){b=b.replace(/calc\(/g,"(");var c={};b=b.replace(a,function(a){return c[a]=null,"U"+a});for(var d="U("+a.source+")",e=b.replace(/[-+]?(\d*\.)?\d+/g,"N").replace(new RegExp("N"+d,"g"),"D").replace(/\s[+-]\s/g,"O").replace(/\s/g,""),f=[/N\*(D)/g,/(N|D)[*\/]N/g,/(N|D)O\1/g,/\((N|D)\)/g],g=0;g<f.length;)f[g].test(e)?(e=e.replace(f[g],"$1"),g=0):g++;if("D"==e){for(var h in c){var i=eval(b.replace(new RegExp("U"+h,"g"),"").replace(new RegExp(d,"g"),"*0"));if(!isFinite(i))return;c[h]=i}return c}}}function d(a,b){return e(a,b,!0)}function e(b,c,d){var e,f=[];for(e in b)f.push(e);for(e in c)f.indexOf(e)<0&&f.push(e);return b=f.map(function(a){return b[a]||0}),c=f.map(function(a){return c[a]||0}),[b,c,function(b){var c=b.map(function(c,e){return 1==b.length&&d&&(c=Math.max(c,0)),a.numberToString(c)+f[e]}).join(" + ");return b.length>1?"calc("+c+")":c}]}var f="px|em|ex|ch|rem|vw|vh|vmin|vmax|cm|mm|in|pt|pc",g=c.bind(null,new RegExp(f,"g")),h=c.bind(null,new RegExp(f+"|%","g")),i=c.bind(null,/deg|rad|grad|turn/g);a.parseLength=g,a.parseLengthOrPercent=h,a.consumeLengthOrPercent=a.consumeParenthesised.bind(null,h),a.parseAngle=i,a.mergeDimensions=e;var j=a.consumeParenthesised.bind(null,g),k=a.consumeRepeated.bind(void 0,j,/^/),l=a.consumeRepeated.bind(void 0,k,/^,/);a.consumeSizePairList=l;var m=function(a){var b=l(a);return b&&""==b[1]?b[0]:void 0},n=a.mergeNestedRepeated.bind(void 0,d," "),o=a.mergeNestedRepeated.bind(void 0,n,",");a.mergeNonNegativeSizePair=n,a.addPropertiesHandler(m,o,["background-size"]),a.addPropertiesHandler(h,d,["border-bottom-width","border-image-width","border-left-width","border-right-width","border-top-width","flex-basis","font-size","height","line-height","max-height","max-width","outline-width","width"]),a.addPropertiesHandler(h,e,["border-bottom-left-radius","border-bottom-right-radius","border-top-left-radius","border-top-right-radius","bottom","left","letter-spacing","margin-bottom","margin-left","margin-right","margin-top","min-height","min-width","outline-offset","padding-bottom","padding-left","padding-right","padding-top","perspective","right","shape-margin","text-indent","top","vertical-align","word-spacing"])}(d,f),function(a,b){function c(b){return a.consumeLengthOrPercent(b)||a.consumeToken(/^auto/,b)}function d(b){var d=a.consumeList([a.ignore(a.consumeToken.bind(null,/^rect/)),a.ignore(a.consumeToken.bind(null,/^\(/)),a.consumeRepeated.bind(null,c,/^,/),a.ignore(a.consumeToken.bind(null,/^\)/))],b);return d&&4==d[0].length?d[0]:void 0}function e(b,c){return"auto"==b||"auto"==c?[!0,!1,function(d){var e=d?b:c;if("auto"==e)return"auto";var f=a.mergeDimensions(e,e);return f[2](f[0])}]:a.mergeDimensions(b,c)}function f(a){return"rect("+a+")"}var g=a.mergeWrappedNestedRepeated.bind(null,f,e,", ");a.parseBox=d,a.mergeBoxes=g,a.addPropertiesHandler(d,g,["clip"])}(d,f),function(a,b){function c(a){return function(b){var c=0;return a.map(function(a){return a===k?b[c++]:a})}}function d(a){return a}function e(b){if(b=b.toLowerCase().trim(),"none"==b)return[];for(var c,d=/\s*(\w+)\(([^)]*)\)/g,e=[],f=0;c=d.exec(b);){if(c.index!=f)return;f=c.index+c[0].length;var g=c[1],h=n[g];if(!h)return;var i=c[2].split(","),j=h[0];if(j.length<i.length)return;for(var k=[],o=0;o<j.length;o++){var p,q=i[o],r=j[o];if(p=q?{A:function(b){return"0"==b.trim()?m:a.parseAngle(b)},N:a.parseNumber,T:a.parseLengthOrPercent,L:a.parseLength}[r.toUpperCase()](q):{a:m,n:k[0],t:l}[r],void 0===p)return;k.push(p)}if(e.push({t:g,d:k}),d.lastIndex==b.length)return e}}function f(a){return a.toFixed(6).replace(".000000","")}function g(b,c){if(b.decompositionPair!==c){b.decompositionPair=c;var d=a.makeMatrixDecomposition(b)}if(c.decompositionPair!==b){c.decompositionPair=b;var e=a.makeMatrixDecomposition(c)}return null==d[0]||null==e[0]?[[!1],[!0],function(a){return a?c[0].d:b[0].d}]:(d[0].push(0),e[0].push(1),[d,e,function(b){var c=a.quat(d[0][3],e[0][3],b[5]),g=a.composeMatrix(b[0],b[1],b[2],c,b[4]),h=g.map(f).join(",");return h}])}function h(a){return a.replace(/[xy]/,"")}function i(a){return a.replace(/(x|y|z|3d)?$/,"3d")}function j(b,c){var d=a.makeMatrixDecomposition&&!0,e=!1;if(!b.length||!c.length){b.length||(e=!0,b=c,c=[]);for(var f=0;f<b.length;f++){var j=b[f].t,k=b[f].d,l="scale"==j.substr(0,5)?1:0;c.push({t:j,d:k.map(function(a){if("number"==typeof a)return l;var b={};for(var c in a)b[c]=l;return b})})}}var m=function(a,b){return"perspective"==a&&"perspective"==b||("matrix"==a||"matrix3d"==a)&&("matrix"==b||"matrix3d"==b)},o=[],p=[],q=[];if(b.length!=c.length){if(!d)return;var r=g(b,c);o=[r[0]],p=[r[1]],q=[["matrix",[r[2]]]]}else for(var f=0;f<b.length;f++){var j,s=b[f].t,t=c[f].t,u=b[f].d,v=c[f].d,w=n[s],x=n[t];if(m(s,t)){if(!d)return;var r=g([b[f]],[c[f]]);o.push(r[0]),p.push(r[1]),q.push(["matrix",[r[2]]])}else{if(s==t)j=s;else if(w[2]&&x[2]&&h(s)==h(t))j=h(s),u=w[2](u),v=x[2](v);else{if(!w[1]||!x[1]||i(s)!=i(t)){if(!d)return;var r=g(b,c);o=[r[0]],p=[r[1]],q=[["matrix",[r[2]]]];break}j=i(s),u=w[1](u),v=x[1](v)}for(var y=[],z=[],A=[],B=0;B<u.length;B++){var C="number"==typeof u[B]?a.mergeNumbers:a.mergeDimensions,r=C(u[B],v[B]);y[B]=r[0],z[B]=r[1],A.push(r[2])}o.push(y),p.push(z),q.push([j,A])}}if(e){var D=o;o=p,p=D}return[o,p,function(a){return a.map(function(a,b){var c=a.map(function(a,c){return q[b][1][c](a)}).join(",");return"matrix"==q[b][0]&&16==c.split(",").length&&(q[b][0]="matrix3d"),q[b][0]+"("+c+")"}).join(" ")}]}var k=null,l={px:0},m={deg:0},n={matrix:["NNNNNN",[k,k,0,0,k,k,0,0,0,0,1,0,k,k,0,1],d],matrix3d:["NNNNNNNNNNNNNNNN",d],rotate:["A"],rotatex:["A"],rotatey:["A"],rotatez:["A"],rotate3d:["NNNA"],perspective:["L"],scale:["Nn",c([k,k,1]),d],scalex:["N",c([k,1,1]),c([k,1])],scaley:["N",c([1,k,1]),c([1,k])],scalez:["N",c([1,1,k])],scale3d:["NNN",d],skew:["Aa",null,d],skewx:["A",null,c([k,m])],skewy:["A",null,c([m,k])],translate:["Tt",c([k,k,l]),d],translatex:["T",c([k,l,l]),c([k,l])],translatey:["T",c([l,k,l]),c([l,k])],translatez:["L",c([l,l,k])],translate3d:["TTL",d]};a.addPropertiesHandler(e,j,["transform"])}(d,f),function(a,b){function c(a,b){b.concat([a]).forEach(function(b){b in document.documentElement.style&&(d[a]=b)})}var d={};c("transform",["webkitTransform","msTransform"]),c("transformOrigin",["webkitTransformOrigin"]),c("perspective",["webkitPerspective"]),c("perspectiveOrigin",["webkitPerspectiveOrigin"]),a.propertyName=function(a){return d[a]||a}}(d,f)}(),!function(){if(void 0===document.createElement("div").animate([]).oncancel){var a;if(window.performance&&performance.now)var a=function(){return performance.now()};else var a=function(){return Date.now()};var b=function(a,b,c){this.target=a,this.currentTime=b,this.timelineTime=c,this.type="cancel",this.bubbles=!1,this.cancelable=!1,this.currentTarget=a,this.defaultPrevented=!1,this.eventPhase=Event.AT_TARGET,this.timeStamp=Date.now()},c=window.Element.prototype.animate;window.Element.prototype.animate=function(d,e){var f=c.call(this,d,e);f._cancelHandlers=[],f.oncancel=null;var g=f.cancel;f.cancel=function(){g.call(this);var c=new b(this,null,a()),d=this._cancelHandlers.concat(this.oncancel?[this.oncancel]:[]);setTimeout(function(){d.forEach(function(a){a.call(c.target,c)})},0)};var h=f.addEventListener;f.addEventListener=function(a,b){"function"==typeof b&&"cancel"==a?this._cancelHandlers.push(b):h.call(this,a,b)};var i=f.removeEventListener;return f.removeEventListener=function(a,b){if("cancel"==a){var c=this._cancelHandlers.indexOf(b);c>=0&&this._cancelHandlers.splice(c,1)}else i.call(this,a,b)},f}}}(),function(a){var b=document.documentElement,c=null,d=!1;try{var e=getComputedStyle(b).getPropertyValue("opacity"),f="0"==e?"1":"0";c=b.animate({opacity:[f,f]},{duration:1}),c.currentTime=0,d=getComputedStyle(b).getPropertyValue("opacity")==f}catch(g){}finally{c&&c.cancel()}if(!d){var h=window.Element.prototype.animate;window.Element.prototype.animate=function(b,c){return window.Symbol&&Symbol.iterator&&Array.prototype.from&&b[Symbol.iterator]&&(b=Array.from(b)),Array.isArray(b)||null===b||(b=a.convertToArrayForm(b)),h.call(this,b,c)}}}(c),!function(a,b,c){function d(a){var b=window.document.timeline;b.currentTime=a,b._discardAnimations(),0==b._animations.length?f=!1:requestAnimationFrame(d);
-}var e=window.requestAnimationFrame;window.requestAnimationFrame=function(a){return e(function(b){window.document.timeline._updateAnimationsPromises(),a(b),window.document.timeline._updateAnimationsPromises()})},b.AnimationTimeline=function(){this._animations=[],this.currentTime=void 0},b.AnimationTimeline.prototype={getAnimations:function(){return this._discardAnimations(),this._animations.slice()},_updateAnimationsPromises:function(){b.animationsWithPromises=b.animationsWithPromises.filter(function(a){return a._updatePromises()})},_discardAnimations:function(){this._updateAnimationsPromises(),this._animations=this._animations.filter(function(a){return"finished"!=a.playState&&"idle"!=a.playState})},_play:function(a){var c=new b.Animation(a,this);return this._animations.push(c),b.restartWebAnimationsNextTick(),c._updatePromises(),c._animation.play(),c._updatePromises(),c},play:function(a){return a&&a.remove(),this._play(a)}};var f=!1;b.restartWebAnimationsNextTick=function(){f||(f=!0,requestAnimationFrame(d))};var g=new b.AnimationTimeline;b.timeline=g;try{Object.defineProperty(window.document,"timeline",{configurable:!0,get:function(){return g}})}catch(h){}try{window.document.timeline=g}catch(h){}}(c,e,f),function(a,b,c){b.animationsWithPromises=[],b.Animation=function(b,c){if(this.id="",b&&b._id&&(this.id=b._id),this.effect=b,b&&(b._animation=this),!c)throw new Error("Animation with null timeline is not supported");this._timeline=c,this._sequenceNumber=a.sequenceNumber++,this._holdTime=0,this._paused=!1,this._isGroup=!1,this._animation=null,this._childAnimations=[],this._callback=null,this._oldPlayState="idle",this._rebuildUnderlyingAnimation(),this._animation.cancel(),this._updatePromises()},b.Animation.prototype={_updatePromises:function(){var a=this._oldPlayState,b=this.playState;return this._readyPromise&&b!==a&&("idle"==b?(this._rejectReadyPromise(),this._readyPromise=void 0):"pending"==a?this._resolveReadyPromise():"pending"==b&&(this._readyPromise=void 0)),this._finishedPromise&&b!==a&&("idle"==b?(this._rejectFinishedPromise(),this._finishedPromise=void 0):"finished"==b?this._resolveFinishedPromise():"finished"==a&&(this._finishedPromise=void 0)),this._oldPlayState=this.playState,this._readyPromise||this._finishedPromise},_rebuildUnderlyingAnimation:function(){this._updatePromises();var a,c,d,e,f=!!this._animation;f&&(a=this.playbackRate,c=this._paused,d=this.startTime,e=this.currentTime,this._animation.cancel(),this._animation._wrapper=null,this._animation=null),(!this.effect||this.effect instanceof window.KeyframeEffect)&&(this._animation=b.newUnderlyingAnimationForKeyframeEffect(this.effect),b.bindAnimationForKeyframeEffect(this)),(this.effect instanceof window.SequenceEffect||this.effect instanceof window.GroupEffect)&&(this._animation=b.newUnderlyingAnimationForGroup(this.effect),b.bindAnimationForGroup(this)),this.effect&&this.effect._onsample&&b.bindAnimationForCustomEffect(this),f&&(1!=a&&(this.playbackRate=a),null!==d?this.startTime=d:null!==e?this.currentTime=e:null!==this._holdTime&&(this.currentTime=this._holdTime),c&&this.pause()),this._updatePromises()},_updateChildren:function(){if(this.effect&&"idle"!=this.playState){var a=this.effect._timing.delay;this._childAnimations.forEach(function(c){this._arrangeChildren(c,a),this.effect instanceof window.SequenceEffect&&(a+=b.groupChildDuration(c.effect))}.bind(this))}},_setExternalAnimation:function(a){if(this.effect&&this._isGroup)for(var b=0;b<this.effect.children.length;b++)this.effect.children[b]._animation=a,this._childAnimations[b]._setExternalAnimation(a)},_constructChildAnimations:function(){if(this.effect&&this._isGroup){var a=this.effect._timing.delay;this._removeChildAnimations(),this.effect.children.forEach(function(c){var d=window.document.timeline._play(c);this._childAnimations.push(d),d.playbackRate=this.playbackRate,this._paused&&d.pause(),c._animation=this.effect._animation,this._arrangeChildren(d,a),this.effect instanceof window.SequenceEffect&&(a+=b.groupChildDuration(c))}.bind(this))}},_arrangeChildren:function(a,b){null===this.startTime?a.currentTime=this.currentTime-b/this.playbackRate:a.startTime!==this.startTime+b/this.playbackRate&&(a.startTime=this.startTime+b/this.playbackRate)},get timeline(){return this._timeline},get playState(){return this._animation?this._animation.playState:"idle"},get finished(){return window.Promise?(this._finishedPromise||(-1==b.animationsWithPromises.indexOf(this)&&b.animationsWithPromises.push(this),this._finishedPromise=new Promise(function(a,b){this._resolveFinishedPromise=function(){a(this)},this._rejectFinishedPromise=function(){b({type:DOMException.ABORT_ERR,name:"AbortError"})}}.bind(this)),"finished"==this.playState&&this._resolveFinishedPromise()),this._finishedPromise):(console.warn("Animation Promises require JavaScript Promise constructor"),null)},get ready(){return window.Promise?(this._readyPromise||(-1==b.animationsWithPromises.indexOf(this)&&b.animationsWithPromises.push(this),this._readyPromise=new Promise(function(a,b){this._resolveReadyPromise=function(){a(this)},this._rejectReadyPromise=function(){b({type:DOMException.ABORT_ERR,name:"AbortError"})}}.bind(this)),"pending"!==this.playState&&this._resolveReadyPromise()),this._readyPromise):(console.warn("Animation Promises require JavaScript Promise constructor"),null)},get onfinish(){return this._animation.onfinish},set onfinish(a){"function"==typeof a?this._animation.onfinish=function(b){b.target=this,a.call(this,b)}.bind(this):this._animation.onfinish=a},get oncancel(){return this._animation.oncancel},set oncancel(a){"function"==typeof a?this._animation.oncancel=function(b){b.target=this,a.call(this,b)}.bind(this):this._animation.oncancel=a},get currentTime(){this._updatePromises();var a=this._animation.currentTime;return this._updatePromises(),a},set currentTime(a){this._updatePromises(),this._animation.currentTime=isFinite(a)?a:Math.sign(a)*Number.MAX_VALUE,this._register(),this._forEachChild(function(b,c){b.currentTime=a-c}),this._updatePromises()},get startTime(){return this._animation.startTime},set startTime(a){this._updatePromises(),this._animation.startTime=isFinite(a)?a:Math.sign(a)*Number.MAX_VALUE,this._register(),this._forEachChild(function(b,c){b.startTime=a+c}),this._updatePromises()},get playbackRate(){return this._animation.playbackRate},set playbackRate(a){this._updatePromises();var b=this.currentTime;this._animation.playbackRate=a,this._forEachChild(function(b){b.playbackRate=a}),"paused"!=this.playState&&"idle"!=this.playState&&this.play(),null!==b&&(this.currentTime=b),this._updatePromises()},play:function(){this._updatePromises(),this._paused=!1,this._animation.play(),-1==this._timeline._animations.indexOf(this)&&this._timeline._animations.push(this),this._register(),b.awaitStartTime(this),this._forEachChild(function(a){var b=a.currentTime;a.play(),a.currentTime=b}),this._updatePromises()},pause:function(){this._updatePromises(),this.currentTime&&(this._holdTime=this.currentTime),this._animation.pause(),this._register(),this._forEachChild(function(a){a.pause()}),this._paused=!0,this._updatePromises()},finish:function(){this._updatePromises(),this._animation.finish(),this._register(),this._updatePromises()},cancel:function(){this._updatePromises(),this._animation.cancel(),this._register(),this._removeChildAnimations(),this._updatePromises()},reverse:function(){this._updatePromises();var a=this.currentTime;this._animation.reverse(),this._forEachChild(function(a){a.reverse()}),null!==a&&(this.currentTime=a),this._updatePromises()},addEventListener:function(a,b){var c=b;"function"==typeof b&&(c=function(a){a.target=this,b.call(this,a)}.bind(this),b._wrapper=c),this._animation.addEventListener(a,c)},removeEventListener:function(a,b){this._animation.removeEventListener(a,b&&b._wrapper||b)},_removeChildAnimations:function(){for(;this._childAnimations.length;)this._childAnimations.pop().cancel()},_forEachChild:function(b){var c=0;if(this.effect.children&&this._childAnimations.length<this.effect.children.length&&this._constructChildAnimations(),this._childAnimations.forEach(function(a){b.call(this,a,c),this.effect instanceof window.SequenceEffect&&(c+=a.effect.activeDuration)}.bind(this)),"pending"!=this.playState){var d=this.effect._timing,e=this.currentTime;null!==e&&(e=a.calculateTimeFraction(a.calculateActiveDuration(d),e,d)),(null==e||isNaN(e))&&this._removeChildAnimations()}}},window.Animation=b.Animation}(c,e,f),function(a,b,c){function d(b){this._frames=a.normalizeKeyframes(b)}function e(){for(var a=!1;i.length;){var b=i.shift();b._updateChildren(),a=!0}return a}var f=function(a){if(a._animation=void 0,a instanceof window.SequenceEffect||a instanceof window.GroupEffect)for(var b=0;b<a.children.length;b++)f(a.children[b])};b.removeMulti=function(a){for(var b=[],c=0;c<a.length;c++){var d=a[c];d._parent?(-1==b.indexOf(d._parent)&&b.push(d._parent),d._parent.children.splice(d._parent.children.indexOf(d),1),d._parent=null,f(d)):d._animation&&d._animation.effect==d&&(d._animation.cancel(),d._animation.effect=new KeyframeEffect(null,[]),d._animation._callback&&(d._animation._callback._animation=null),d._animation._rebuildUnderlyingAnimation(),f(d))}for(c=0;c<b.length;c++)b[c]._rebuild()},b.KeyframeEffect=function(b,c,e,f){return this.target=b,this._parent=null,e=a.numericTimingToObject(e),this._timingInput=a.cloneTimingInput(e),this._timing=a.normalizeTimingInput(e),this.timing=a.makeTiming(e,!1,this),this.timing._effect=this,"function"==typeof c?(a.deprecated("Custom KeyframeEffect","2015-06-22","Use KeyframeEffect.onsample instead."),this._normalizedKeyframes=c):this._normalizedKeyframes=new d(c),this._keyframes=c,this.activeDuration=a.calculateActiveDuration(this._timing),this._id=f,this},b.KeyframeEffect.prototype={getFrames:function(){return"function"==typeof this._normalizedKeyframes?this._normalizedKeyframes:this._normalizedKeyframes._frames},set onsample(a){if("function"==typeof this.getFrames())throw new Error("Setting onsample on custom effect KeyframeEffect is not supported.");this._onsample=a,this._animation&&this._animation._rebuildUnderlyingAnimation()},get parent(){return this._parent},clone:function(){if("function"==typeof this.getFrames())throw new Error("Cloning custom effects is not supported.");var b=new KeyframeEffect(this.target,[],a.cloneTimingInput(this._timingInput),this._id);return b._normalizedKeyframes=this._normalizedKeyframes,b._keyframes=this._keyframes,b},remove:function(){b.removeMulti([this])}};var g=Element.prototype.animate;Element.prototype.animate=function(a,c){var d="";return c&&c.id&&(d=c.id),b.timeline._play(new b.KeyframeEffect(this,a,c,d))};var h=document.createElementNS("http://www.w3.org/1999/xhtml","div");b.newUnderlyingAnimationForKeyframeEffect=function(a){if(a){var b=a.target||h,c=a._keyframes;"function"==typeof c&&(c=[]);var d=a._timingInput;d.id=a._id}else var b=h,c=[],d=0;return g.apply(b,[c,d])},b.bindAnimationForKeyframeEffect=function(a){a.effect&&"function"==typeof a.effect._normalizedKeyframes&&b.bindAnimationForCustomEffect(a)};var i=[];b.awaitStartTime=function(a){null===a.startTime&&a._isGroup&&(0==i.length&&requestAnimationFrame(e),i.push(a))};var j=window.getComputedStyle;Object.defineProperty(window,"getComputedStyle",{configurable:!0,enumerable:!0,value:function(){window.document.timeline._updateAnimationsPromises();var a=j.apply(this,arguments);return e()&&(a=j.apply(this,arguments)),window.document.timeline._updateAnimationsPromises(),a}}),window.KeyframeEffect=b.KeyframeEffect,window.Element.prototype.getAnimations=function(){return document.timeline.getAnimations().filter(function(a){return null!==a.effect&&a.effect.target==this}.bind(this))}}(c,e,f),function(a,b,c){function d(a){a._registered||(a._registered=!0,g.push(a),h||(h=!0,requestAnimationFrame(e)))}function e(a){var b=g;g=[],b.sort(function(a,b){return a._sequenceNumber-b._sequenceNumber}),b=b.filter(function(a){a();var b=a._animation?a._animation.playState:"idle";return"running"!=b&&"pending"!=b&&(a._registered=!1),a._registered}),g.push.apply(g,b),g.length?(h=!0,requestAnimationFrame(e)):h=!1}var f=(document.createElementNS("http://www.w3.org/1999/xhtml","div"),0);b.bindAnimationForCustomEffect=function(b){var c,e=b.effect.target,g="function"==typeof b.effect.getFrames();c=g?b.effect.getFrames():b.effect._onsample;var h=b.effect.timing,i=null;h=a.normalizeTimingInput(h);var j=function(){var d=j._animation?j._animation.currentTime:null;null!==d&&(d=a.calculateTimeFraction(a.calculateActiveDuration(h),d,h),isNaN(d)&&(d=null)),d!==i&&(g?c(d,e,b.effect):c(d,b.effect,b.effect._animation)),i=d};j._animation=b,j._registered=!1,j._sequenceNumber=f++,b._callback=j,d(j)};var g=[],h=!1;b.Animation.prototype._register=function(){this._callback&&d(this._callback)}}(c,e,f),function(a,b,c){function d(a){return a._timing.delay+a.activeDuration+a._timing.endDelay}function e(b,c,d){this._id=d,this._parent=null,this.children=b||[],this._reparent(this.children),c=a.numericTimingToObject(c),this._timingInput=a.cloneTimingInput(c),this._timing=a.normalizeTimingInput(c,!0),this.timing=a.makeTiming(c,!0,this),this.timing._effect=this,"auto"===this._timing.duration&&(this._timing.duration=this.activeDuration)}window.SequenceEffect=function(){e.apply(this,arguments)},window.GroupEffect=function(){e.apply(this,arguments)},e.prototype={_isAncestor:function(a){for(var b=this;null!==b;){if(b==a)return!0;b=b._parent}return!1},_rebuild:function(){for(var a=this;a;)"auto"===a.timing.duration&&(a._timing.duration=a.activeDuration),a=a._parent;this._animation&&this._animation._rebuildUnderlyingAnimation()},_reparent:function(a){b.removeMulti(a);for(var c=0;c<a.length;c++)a[c]._parent=this},_putChild:function(a,b){for(var c=b?"Cannot append an ancestor or self":"Cannot prepend an ancestor or self",d=0;d<a.length;d++)if(this._isAncestor(a[d]))throw{type:DOMException.HIERARCHY_REQUEST_ERR,name:"HierarchyRequestError",message:c};for(var d=0;d<a.length;d++)b?this.children.push(a[d]):this.children.unshift(a[d]);this._reparent(a),this._rebuild()},append:function(){this._putChild(arguments,!0)},prepend:function(){this._putChild(arguments,!1)},get parent(){return this._parent},get firstChild(){return this.children.length?this.children[0]:null},get lastChild(){return this.children.length?this.children[this.children.length-1]:null},clone:function(){for(var b=a.cloneTimingInput(this._timingInput),c=[],d=0;d<this.children.length;d++)c.push(this.children[d].clone());return this instanceof GroupEffect?new GroupEffect(c,b):new SequenceEffect(c,b)},remove:function(){b.removeMulti([this])}},window.SequenceEffect.prototype=Object.create(e.prototype),Object.defineProperty(window.SequenceEffect.prototype,"activeDuration",{get:function(){var a=0;return this.children.forEach(function(b){a+=d(b)}),Math.max(a,0)}}),window.GroupEffect.prototype=Object.create(e.prototype),Object.defineProperty(window.GroupEffect.prototype,"activeDuration",{get:function(){var a=0;return this.children.forEach(function(b){a=Math.max(a,d(b))}),a}}),b.newUnderlyingAnimationForGroup=function(c){var d,e=null,f=function(b){var c=d._wrapper;return c&&"pending"!=c.playState&&c.effect?null==b?void c._removeChildAnimations():0==b&&c.playbackRate<0&&(e||(e=a.normalizeTimingInput(c.effect.timing)),b=a.calculateTimeFraction(a.calculateActiveDuration(e),-1,e),isNaN(b)||null==b)?(c._forEachChild(function(a){a.currentTime=-1}),void c._removeChildAnimations()):void 0:void 0},g=new KeyframeEffect(null,[],c._timing,c._id);return g.onsample=f,d=b.timeline._play(g)},b.bindAnimationForGroup=function(a){a._animation._wrapper=a,a._isGroup=!0,b.awaitStartTime(a),a._constructChildAnimations(),a._setExternalAnimation(a)},b.groupChildDuration=d}(c,e,f),b["true"]=a}({},function(){return this}());
+!function(a,b){var c={},d={},e={},f=null;!function(a,b){function c(a){if("number"==typeof a)return a;var b={};for(var c in a)b[c]=a[c];return b}function d(){this._delay=0,this._endDelay=0,this._fill="none",this._iterationStart=0,this._iterations=1,this._duration=0,this._playbackRate=1,this._direction="normal",this._easing="linear",this._easingFunction=x}function e(){return a.isDeprecated("Invalid timing inputs","2016-03-02","TypeError exceptions will be thrown instead.",!0)}function f(b,c,e){var f=new d;return c&&(f.fill="both",f.duration="auto"),"number"!=typeof b||isNaN(b)?void 0!==b&&Object.getOwnPropertyNames(b).forEach(function(c){if("auto"!=b[c]){if(("number"==typeof f[c]||"duration"==c)&&("number"!=typeof b[c]||isNaN(b[c])))return;if("fill"==c&&v.indexOf(b[c])==-1)return;if("direction"==c&&w.indexOf(b[c])==-1)return;if("playbackRate"==c&&1!==b[c]&&a.isDeprecated("AnimationEffectTiming.playbackRate","2014-11-28","Use Animation.playbackRate instead."))return;f[c]=b[c]}}):f.duration=b,f}function g(a){return"number"==typeof a&&(a=isNaN(a)?{duration:0}:{duration:a}),a}function h(b,c){return b=a.numericTimingToObject(b),f(b,c)}function i(a,b,c,d){return a<0||a>1||c<0||c>1?x:function(e){function f(a,b,c){return 3*a*(1-c)*(1-c)*c+3*b*(1-c)*c*c+c*c*c}if(e<=0){var g=0;return a>0?g=b/a:!b&&c>0&&(g=d/c),g*e}if(e>=1){var h=0;return c<1?h=(d-1)/(c-1):1==c&&a<1&&(h=(b-1)/(a-1)),1+h*(e-1)}for(var i=0,j=1;i<j;){var k=(i+j)/2,l=f(a,c,k);if(Math.abs(e-l)<1e-5)return f(b,d,k);l<e?i=k:j=k}return f(b,d,k)}}function j(a,b){return function(c){if(c>=1)return 1;var d=1/a;return c+=b*d,c-c%d}}function k(a){C||(C=document.createElement("div").style),C.animationTimingFunction="",C.animationTimingFunction=a;var b=C.animationTimingFunction;if(""==b&&e())throw new TypeError(a+" is not a valid value for easing");return b}function l(a){if("linear"==a)return x;var b=E.exec(a);if(b)return i.apply(this,b.slice(1).map(Number));var c=F.exec(a);if(c)return j(Number(c[1]),{start:y,middle:z,end:A}[c[2]]);var d=B[a];return d?d:x}function m(a){return Math.abs(n(a)/a.playbackRate)}function n(a){return 0===a.duration||0===a.iterations?0:a.duration*a.iterations}function o(a,b,c){if(null==b)return G;var d=c.delay+a+c.endDelay;return b<Math.min(c.delay,d)?H:b>=Math.min(c.delay+a,d)?I:J}function p(a,b,c,d,e){switch(d){case H:return"backwards"==b||"both"==b?0:null;case J:return c-e;case I:return"forwards"==b||"both"==b?a:null;case G:return null}}function q(a,b,c,d,e){var f=e;return 0===a?b!==H&&(f+=c):f+=d/a,f}function r(a,b,c,d,e,f){var g=a===1/0?b%1:a%1;return 0!==g||c!==I||0===d||0===e&&0!==f||(g=1),g}function s(a,b,c,d){return a===I&&b===1/0?1/0:1===c?Math.floor(d)-1:Math.floor(d)}function t(a,b,c){var d=a;if("normal"!==a&&"reverse"!==a){var e=b;"alternate-reverse"===a&&(e+=1),d="normal",e!==1/0&&e%2!==0&&(d="reverse")}return"normal"===d?c:1-c}function u(a,b,c){var d=o(a,b,c),e=p(a,c.fill,b,d,c.delay);if(null===e)return null;var f=q(c.duration,d,c.iterations,e,c.iterationStart),g=r(f,c.iterationStart,d,c.iterations,e,c.duration),h=s(d,c.iterations,g,f),i=t(c.direction,h,g);return c._easingFunction(i)}var v="backwards|forwards|both|none".split("|"),w="reverse|alternate|alternate-reverse".split("|"),x=function(a){return a};d.prototype={_setMember:function(b,c){this["_"+b]=c,this._effect&&(this._effect._timingInput[b]=c,this._effect._timing=a.normalizeTimingInput(this._effect._timingInput),this._effect.activeDuration=a.calculateActiveDuration(this._effect._timing),this._effect._animation&&this._effect._animation._rebuildUnderlyingAnimation())},get playbackRate(){return this._playbackRate},set delay(a){this._setMember("delay",a)},get delay(){return this._delay},set endDelay(a){this._setMember("endDelay",a)},get endDelay(){return this._endDelay},set fill(a){this._setMember("fill",a)},get fill(){return this._fill},set iterationStart(a){if((isNaN(a)||a<0)&&e())throw new TypeError("iterationStart must be a non-negative number, received: "+timing.iterationStart);this._setMember("iterationStart",a)},get iterationStart(){return this._iterationStart},set duration(a){if("auto"!=a&&(isNaN(a)||a<0)&&e())throw new TypeError("duration must be non-negative or auto, received: "+a);this._setMember("duration",a)},get duration(){return this._duration},set direction(a){this._setMember("direction",a)},get direction(){return this._direction},set easing(a){this._easingFunction=l(k(a)),this._setMember("easing",a)},get easing(){return this._easing},set iterations(a){if((isNaN(a)||a<0)&&e())throw new TypeError("iterations must be non-negative, received: "+a);this._setMember("iterations",a)},get iterations(){return this._iterations}};var y=1,z=.5,A=0,B={ease:i(.25,.1,.25,1),"ease-in":i(.42,0,1,1),"ease-out":i(0,0,.58,1),"ease-in-out":i(.42,0,.58,1),"step-start":j(1,y),"step-middle":j(1,z),"step-end":j(1,A)},C=null,D="\\s*(-?\\d+\\.?\\d*|-?\\.\\d+)\\s*",E=new RegExp("cubic-bezier\\("+D+","+D+","+D+","+D+"\\)"),F=/steps\(\s*(\d+)\s*,\s*(start|middle|end)\s*\)/,G=0,H=1,I=2,J=3;a.cloneTimingInput=c,a.makeTiming=f,a.numericTimingToObject=g,a.normalizeTimingInput=h,a.calculateActiveDuration=m,a.calculateIterationProgress=u,a.calculatePhase=o,a.normalizeEasing=k,a.parseEasingFunction=l}(c,f),function(a,b){function c(a,b){return a in k?k[a][b]||b:b}function d(a){return"display"===a||0===a.lastIndexOf("animation",0)||0===a.lastIndexOf("transition",0)}function e(a,b,e){if(!d(a)){var f=h[a];if(f){i.style[a]=b;for(var g in f){var j=f[g],k=i.style[j];e[j]=c(j,k)}}else e[a]=c(a,b)}}function f(a){var b=[];for(var c in a)if(!(c in["easing","offset","composite"])){var d=a[c];Array.isArray(d)||(d=[d]);for(var e,f=d.length,g=0;g<f;g++)e={},"offset"in a?e.offset=a.offset:1==f?e.offset=1:e.offset=g/(f-1),"easing"in a&&(e.easing=a.easing),"composite"in a&&(e.composite=a.composite),e[c]=d[g],b.push(e)}return b.sort(function(a,b){return a.offset-b.offset}),b}function g(b){function c(){var a=d.length;null==d[a-1].offset&&(d[a-1].offset=1),a>1&&null==d[0].offset&&(d[0].offset=0);for(var b=0,c=d[0].offset,e=1;e<a;e++){var f=d[e].offset;if(null!=f){for(var g=1;g<e-b;g++)d[b+g].offset=c+(f-c)*g/(e-b);b=e,c=f}}}if(null==b)return[];window.Symbol&&Symbol.iterator&&Array.prototype.from&&b[Symbol.iterator]&&(b=Array.from(b)),Array.isArray(b)||(b=f(b));for(var d=b.map(function(b){var c={};for(var d in b){var f=b[d];if("offset"==d){if(null!=f){if(f=Number(f),!isFinite(f))throw new TypeError("Keyframe offsets must be numbers.");if(f<0||f>1)throw new TypeError("Keyframe offsets must be between 0 and 1.")}}else if("composite"==d){if("add"==f||"accumulate"==f)throw{type:DOMException.NOT_SUPPORTED_ERR,name:"NotSupportedError",message:"add compositing is not supported"};if("replace"!=f)throw new TypeError("Invalid composite mode "+f+".")}else f="easing"==d?a.normalizeEasing(f):""+f;e(d,f,c)}return void 0==c.offset&&(c.offset=null),void 0==c.easing&&(c.easing="linear"),c}),g=!0,h=-(1/0),i=0;i<d.length;i++){var j=d[i].offset;if(null!=j){if(j<h)throw new TypeError("Keyframes are not loosely sorted by offset. Sort or specify offsets.");h=j}else g=!1}return d=d.filter(function(a){return a.offset>=0&&a.offset<=1}),g||c(),d}var h={background:["backgroundImage","backgroundPosition","backgroundSize","backgroundRepeat","backgroundAttachment","backgroundOrigin","backgroundClip","backgroundColor"],border:["borderTopColor","borderTopStyle","borderTopWidth","borderRightColor","borderRightStyle","borderRightWidth","borderBottomColor","borderBottomStyle","borderBottomWidth","borderLeftColor","borderLeftStyle","borderLeftWidth"],borderBottom:["borderBottomWidth","borderBottomStyle","borderBottomColor"],borderColor:["borderTopColor","borderRightColor","borderBottomColor","borderLeftColor"],borderLeft:["borderLeftWidth","borderLeftStyle","borderLeftColor"],borderRadius:["borderTopLeftRadius","borderTopRightRadius","borderBottomRightRadius","borderBottomLeftRadius"],borderRight:["borderRightWidth","borderRightStyle","borderRightColor"],borderTop:["borderTopWidth","borderTopStyle","borderTopColor"],borderWidth:["borderTopWidth","borderRightWidth","borderBottomWidth","borderLeftWidth"],flex:["flexGrow","flexShrink","flexBasis"],font:["fontFamily","fontSize","fontStyle","fontVariant","fontWeight","lineHeight"],margin:["marginTop","marginRight","marginBottom","marginLeft"],outline:["outlineColor","outlineStyle","outlineWidth"],padding:["paddingTop","paddingRight","paddingBottom","paddingLeft"]},i=document.createElementNS("http://www.w3.org/1999/xhtml","div"),j={thin:"1px",medium:"3px",thick:"5px"},k={borderBottomWidth:j,borderLeftWidth:j,borderRightWidth:j,borderTopWidth:j,fontSize:{"xx-small":"60%","x-small":"75%",small:"89%",medium:"100%",large:"120%","x-large":"150%","xx-large":"200%"},fontWeight:{normal:"400",bold:"700"},outlineWidth:j,textShadow:{none:"0px 0px 0px transparent"},boxShadow:{none:"0px 0px 0px 0px transparent"}};a.convertToArrayForm=f,a.normalizeKeyframes=g}(c,f),function(a){var b={};a.isDeprecated=function(a,c,d,e){var f=e?"are":"is",g=new Date,h=new Date(c);return h.setMonth(h.getMonth()+3),!(g<h&&(a in b||console.warn("Web Animations: "+a+" "+f+" deprecated and will stop working on "+h.toDateString()+". "+d),b[a]=!0,1))},a.deprecated=function(b,c,d,e){var f=e?"are":"is";if(a.isDeprecated(b,c,d,e))throw new Error(b+" "+f+" no longer supported. "+d)}}(c),function(){if(document.documentElement.animate){var a=document.documentElement.animate([],0),b=!0;if(a&&(b=!1,"play|currentTime|pause|reverse|playbackRate|cancel|finish|startTime|playState".split("|").forEach(function(c){void 0===a[c]&&(b=!0)})),!b)return}!function(a,b,c){function d(a){for(var b={},c=0;c<a.length;c++)for(var d in a[c])if("offset"!=d&&"easing"!=d&&"composite"!=d){var e={offset:a[c].offset,easing:a[c].easing,value:a[c][d]};b[d]=b[d]||[],b[d].push(e)}for(var f in b){var g=b[f];if(0!=g[0].offset||1!=g[g.length-1].offset)throw{type:DOMException.NOT_SUPPORTED_ERR,name:"NotSupportedError",message:"Partial keyframes are not supported"}}return b}function e(c){var d=[];for(var e in c)for(var f=c[e],g=0;g<f.length-1;g++){var h=g,i=g+1,j=f[h].offset,k=f[i].offset,l=j,m=k;0==g&&(l=-(1/0),0==k&&(i=h)),g==f.length-2&&(m=1/0,1==j&&(h=i)),d.push({applyFrom:l,applyTo:m,startOffset:f[h].offset,endOffset:f[i].offset,easingFunction:a.parseEasingFunction(f[h].easing),property:e,interpolation:b.propertyInterpolation(e,f[h].value,f[i].value)})}return d.sort(function(a,b){return a.startOffset-b.startOffset}),d}b.convertEffectInput=function(c){var f=a.normalizeKeyframes(c),g=d(f),h=e(g);return function(a,c){if(null!=c)h.filter(function(a){return c>=a.applyFrom&&c<a.applyTo}).forEach(function(d){var e=c-d.startOffset,f=d.endOffset-d.startOffset,g=0==f?0:d.easingFunction(e/f);b.apply(a,d.property,d.interpolation(g))});else for(var d in g)"offset"!=d&&"easing"!=d&&"composite"!=d&&b.clear(a,d)}}}(c,d,f),function(a,b,c){function d(a){return a.replace(/-(.)/g,function(a,b){return b.toUpperCase()})}function e(a,b,c){h[c]=h[c]||[],h[c].push([a,b])}function f(a,b,c){for(var f=0;f<c.length;f++){var g=c[f];e(a,b,d(g))}}function g(c,e,f){var g=c;/-/.test(c)&&!a.isDeprecated("Hyphenated property names","2016-03-22","Use camelCase instead.",!0)&&(g=d(c)),"initial"!=e&&"initial"!=f||("initial"==e&&(e=i[g]),"initial"==f&&(f=i[g]));for(var j=e==f?[]:h[g],k=0;j&&k<j.length;k++){var l=j[k][0](e),m=j[k][0](f);if(void 0!==l&&void 0!==m){var n=j[k][1](l,m);if(n){var o=b.Interpolation.apply(null,n);return function(a){return 0==a?e:1==a?f:o(a)}}}}return b.Interpolation(!1,!0,function(a){return a?f:e})}var h={};b.addPropertiesHandler=f;var i={backgroundColor:"transparent",backgroundPosition:"0% 0%",borderBottomColor:"currentColor",borderBottomLeftRadius:"0px",borderBottomRightRadius:"0px",borderBottomWidth:"3px",borderLeftColor:"currentColor",borderLeftWidth:"3px",borderRightColor:"currentColor",borderRightWidth:"3px",borderSpacing:"2px",borderTopColor:"currentColor",borderTopLeftRadius:"0px",borderTopRightRadius:"0px",borderTopWidth:"3px",bottom:"auto",clip:"rect(0px, 0px, 0px, 0px)",color:"black",fontSize:"100%",fontWeight:"400",height:"auto",left:"auto",letterSpacing:"normal",lineHeight:"120%",marginBottom:"0px",marginLeft:"0px",marginRight:"0px",marginTop:"0px",maxHeight:"none",maxWidth:"none",minHeight:"0px",minWidth:"0px",opacity:"1.0",outlineColor:"invert",outlineOffset:"0px",outlineWidth:"3px",paddingBottom:"0px",paddingLeft:"0px",paddingRight:"0px",paddingTop:"0px",right:"auto",textIndent:"0px",textShadow:"0px 0px 0px transparent",top:"auto",transform:"",verticalAlign:"0px",visibility:"visible",width:"auto",wordSpacing:"normal",zIndex:"auto"};b.propertyInterpolation=g}(c,d,f),function(a,b,c){function d(b){var c=a.calculateActiveDuration(b),d=function(d){return a.calculateIterationProgress(c,d,b)};return d._totalDuration=b.delay+c+b.endDelay,d}b.KeyframeEffect=function(c,e,f,g){var h,i=d(a.normalizeTimingInput(f)),j=b.convertEffectInput(e),k=function(){j(c,h)};return k._update=function(a){return h=i(a),null!==h},k._clear=function(){j(c,null)},k._hasSameTarget=function(a){return c===a},k._target=c,k._totalDuration=i._totalDuration,k._id=g,k},b.NullEffect=function(a){var b=function(){a&&(a(),a=null)};return b._update=function(){return null},b._totalDuration=0,b._hasSameTarget=function(){return!1},b}}(c,d,f),function(a,b){a.apply=function(b,c,d){b.style[a.propertyName(c)]=d},a.clear=function(b,c){b.style[a.propertyName(c)]=""}}(d,f),function(a){window.Element.prototype.animate=function(b,c){var d="";return c&&c.id&&(d=c.id),a.timeline._play(a.KeyframeEffect(this,b,c,d))}}(d),function(a,b){function c(a,b,d){if("number"==typeof a&&"number"==typeof b)return a*(1-d)+b*d;if("boolean"==typeof a&&"boolean"==typeof b)return d<.5?a:b;if(a.length==b.length){for(var e=[],f=0;f<a.length;f++)e.push(c(a[f],b[f],d));return e}throw"Mismatched interpolation arguments "+a+":"+b}a.Interpolation=function(a,b,d){return function(e){return d(c(a,b,e))}}}(d,f),function(a,b,c){a.sequenceNumber=0;var d=function(a,b,c){this.target=a,this.currentTime=b,this.timelineTime=c,this.type="finish",this.bubbles=!1,this.cancelable=!1,this.currentTarget=a,this.defaultPrevented=!1,this.eventPhase=Event.AT_TARGET,this.timeStamp=Date.now()};b.Animation=function(b){this.id="",b&&b._id&&(this.id=b._id),this._sequenceNumber=a.sequenceNumber++,this._currentTime=0,this._startTime=null,this._paused=!1,this._playbackRate=1,this._inTimeline=!0,this._finishedFlag=!0,this.onfinish=null,this._finishHandlers=[],this._effect=b,this._inEffect=this._effect._update(0),this._idle=!0,this._currentTimePending=!1},b.Animation.prototype={_ensureAlive:function(){this.playbackRate<0&&0===this.currentTime?this._inEffect=this._effect._update(-1):this._inEffect=this._effect._update(this.currentTime),this._inTimeline||!this._inEffect&&this._finishedFlag||(this._inTimeline=!0,b.timeline._animations.push(this))},_tickCurrentTime:function(a,b){a!=this._currentTime&&(this._currentTime=a,this._isFinished&&!b&&(this._currentTime=this._playbackRate>0?this._totalDuration:0),this._ensureAlive())},get currentTime(){return this._idle||this._currentTimePending?null:this._currentTime},set currentTime(a){a=+a,isNaN(a)||(b.restart(),this._paused||null==this._startTime||(this._startTime=this._timeline.currentTime-a/this._playbackRate),this._currentTimePending=!1,this._currentTime!=a&&(this._idle&&(this._idle=!1,this._paused=!0),this._tickCurrentTime(a,!0),b.applyDirtiedAnimation(this)))},get startTime(){return this._startTime},set startTime(a){a=+a,isNaN(a)||this._paused||this._idle||(this._startTime=a,this._tickCurrentTime((this._timeline.currentTime-this._startTime)*this.playbackRate),b.applyDirtiedAnimation(this))},get playbackRate(){return this._playbackRate},set playbackRate(a){if(a!=this._playbackRate){var c=this.currentTime;this._playbackRate=a,this._startTime=null,"paused"!=this.playState&&"idle"!=this.playState&&(this._finishedFlag=!1,this._idle=!1,this._ensureAlive(),b.applyDirtiedAnimation(this)),null!=c&&(this.currentTime=c)}},get _isFinished(){return!this._idle&&(this._playbackRate>0&&this._currentTime>=this._totalDuration||this._playbackRate<0&&this._currentTime<=0)},get _totalDuration(){return this._effect._totalDuration},get playState(){return this._idle?"idle":null==this._startTime&&!this._paused&&0!=this.playbackRate||this._currentTimePending?"pending":this._paused?"paused":this._isFinished?"finished":"running"},_rewind:function(){if(this._playbackRate>=0)this._currentTime=0;else{if(!(this._totalDuration<1/0))throw new DOMException("Unable to rewind negative playback rate animation with infinite duration","InvalidStateError");this._currentTime=this._totalDuration}},play:function(){this._paused=!1,(this._isFinished||this._idle)&&(this._rewind(),this._startTime=null),this._finishedFlag=!1,this._idle=!1,this._ensureAlive(),b.applyDirtiedAnimation(this)},pause:function(){this._isFinished||this._paused||this._idle?this._idle&&(this._rewind(),this._idle=!1):this._currentTimePending=!0,this._startTime=null,this._paused=!0},finish:function(){this._idle||(this.currentTime=this._playbackRate>0?this._totalDuration:0,this._startTime=this._totalDuration-this.currentTime,this._currentTimePending=!1,b.applyDirtiedAnimation(this))},cancel:function(){this._inEffect&&(this._inEffect=!1,this._idle=!0,this._paused=!1,this._isFinished=!0,this._finishedFlag=!0,this._currentTime=0,this._startTime=null,this._effect._update(null),b.applyDirtiedAnimation(this))},reverse:function(){this.playbackRate*=-1,this.play()},addEventListener:function(a,b){"function"==typeof b&&"finish"==a&&this._finishHandlers.push(b)},removeEventListener:function(a,b){if("finish"==a){var c=this._finishHandlers.indexOf(b);c>=0&&this._finishHandlers.splice(c,1)}},_fireEvents:function(a){if(this._isFinished){if(!this._finishedFlag){var b=new d(this,this._currentTime,a),c=this._finishHandlers.concat(this.onfinish?[this.onfinish]:[]);setTimeout(function(){c.forEach(function(a){a.call(b.target,b)})},0),this._finishedFlag=!0}}else this._finishedFlag=!1},_tick:function(a,b){this._idle||this._paused||(null==this._startTime?b&&(this.startTime=a-this._currentTime/this.playbackRate):this._isFinished||this._tickCurrentTime((a-this._startTime)*this.playbackRate)),b&&(this._currentTimePending=!1,this._fireEvents(a))},get _needsTick(){return this.playState in{pending:1,running:1}||!this._finishedFlag},_targetAnimations:function(){var a=this._effect._target;return a._activeAnimations||(a._activeAnimations=[]),a._activeAnimations},_markTarget:function(){var a=this._targetAnimations();a.indexOf(this)===-1&&a.push(this)},_unmarkTarget:function(){var a=this._targetAnimations(),b=a.indexOf(this);b!==-1&&a.splice(b,1)}}}(c,d,f),function(a,b,c){function d(a){var b=j;j=[],a<q.currentTime&&(a=q.currentTime),q._animations.sort(e),q._animations=h(a,!0,q._animations)[0],b.forEach(function(b){b[1](a)}),g(),l=void 0}function e(a,b){return a._sequenceNumber-b._sequenceNumber}function f(){this._animations=[],this.currentTime=window.performance&&performance.now?performance.now():0}function g(){o.forEach(function(a){a()}),o.length=0}function h(a,c,d){p=!0,n=!1;var e=b.timeline;e.currentTime=a,m=!1;var f=[],g=[],h=[],i=[];return d.forEach(function(b){b._tick(a,c),b._inEffect?(g.push(b._effect),b._markTarget()):(f.push(b._effect),b._unmarkTarget()),b._needsTick&&(m=!0);var d=b._inEffect||b._needsTick;b._inTimeline=d,d?h.push(b):i.push(b)}),o.push.apply(o,f),o.push.apply(o,g),m&&requestAnimationFrame(function(){}),p=!1,[h,i]}var i=window.requestAnimationFrame,j=[],k=0;window.requestAnimationFrame=function(a){var b=k++;return 0==j.length&&i(d),j.push([b,a]),b},window.cancelAnimationFrame=function(a){j.forEach(function(b){b[0]==a&&(b[1]=function(){})})},f.prototype={_play:function(c){c._timing=a.normalizeTimingInput(c.timing);var d=new b.Animation(c);return d._idle=!1,d._timeline=this,this._animations.push(d),b.restart(),b.applyDirtiedAnimation(d),d}};var l=void 0,m=!1,n=!1;b.restart=function(){return m||(m=!0,requestAnimationFrame(function(){}),n=!0),n},b.applyDirtiedAnimation=function(a){if(!p){a._markTarget();var c=a._targetAnimations();c.sort(e);var d=h(b.timeline.currentTime,!1,c.slice())[1];d.forEach(function(a){var b=q._animations.indexOf(a);b!==-1&&q._animations.splice(b,1)}),g()}};var o=[],p=!1,q=new f;b.timeline=q}(c,d,f),function(a){function b(a,b){var c=a.exec(b);if(c)return c=a.ignoreCase?c[0].toLowerCase():c[0],[c,b.substr(c.length)]}function c(a,b){b=b.replace(/^\s*/,"");var c=a(b);if(c)return[c[0],c[1].replace(/^\s*/,"")]}function d(a,d,e){a=c.bind(null,a);for(var f=[];;){var g=a(e);if(!g)return[f,e];if(f.push(g[0]),e=g[1],g=b(d,e),!g||""==g[1])return[f,e];e=g[1]}}function e(a,b){for(var c=0,d=0;d<b.length&&(!/\s|,/.test(b[d])||0!=c);d++)if("("==b[d])c++;else if(")"==b[d]&&(c--,0==c&&d++,c<=0))break;var e=a(b.substr(0,d));return void 0==e?void 0:[e,b.substr(d)]}function f(a,b){for(var c=a,d=b;c&&d;)c>d?c%=d:d%=c;return c=a*b/(c+d)}function g(a){return function(b){var c=a(b);return c&&(c[0]=void 0),c}}function h(a,b){return function(c){var d=a(c);return d?d:[b,c]}}function i(b,c){for(var d=[],e=0;e<b.length;e++){var f=a.consumeTrimmed(b[e],c);if(!f||""==f[0])return;void 0!==f[0]&&d.push(f[0]),c=f[1]}if(""==c)return d}function j(a,b,c,d,e){for(var g=[],h=[],i=[],j=f(d.length,e.length),k=0;k<j;k++){var l=b(d[k%d.length],e[k%e.length]);if(!l)return;g.push(l[0]),h.push(l[1]),i.push(l[2])}return[g,h,function(b){var d=b.map(function(a,b){return i[b](a)}).join(c);return a?a(d):d}]}function k(a,b,c){for(var d=[],e=[],f=[],g=0,h=0;h<c.length;h++)if("function"==typeof c[h]){var i=c[h](a[g],b[g++]);d.push(i[0]),e.push(i[1]),f.push(i[2])}else!function(a){d.push(!1),e.push(!1),f.push(function(){return c[a]})}(h);return[d,e,function(a){for(var b="",c=0;c<a.length;c++)b+=f[c](a[c]);return b}]}a.consumeToken=b,a.consumeTrimmed=c,a.consumeRepeated=d,a.consumeParenthesised=e,a.ignore=g,a.optional=h,a.consumeList=i,a.mergeNestedRepeated=j.bind(null,null),a.mergeWrappedNestedRepeated=j,a.mergeList=k}(d),function(a){function b(b){function c(b){var c=a.consumeToken(/^inset/i,b);if(c)return d.inset=!0,c;var c=a.consumeLengthOrPercent(b);if(c)return d.lengths.push(c[0]),c;var c=a.consumeColor(b);return c?(d.color=c[0],c):void 0}var d={inset:!1,lengths:[],color:null},e=a.consumeRepeated(c,/^/,b);if(e&&e[0].length)return[d,e[1]]}function c(c){var d=a.consumeRepeated(b,/^,/,c);if(d&&""==d[1])return d[0]}function d(b,c){for(;b.lengths.length<Math.max(b.lengths.length,c.lengths.length);)b.lengths.push({px:0});for(;c.lengths.length<Math.max(b.lengths.length,c.lengths.length);)c.lengths.push({px:0});if(b.inset==c.inset&&!!b.color==!!c.color){for(var d,e=[],f=[[],0],g=[[],0],h=0;h<b.lengths.length;h++){var i=a.mergeDimensions(b.lengths[h],c.lengths[h],2==h);f[0].push(i[0]),g[0].push(i[1]),e.push(i[2])}if(b.color&&c.color){var j=a.mergeColors(b.color,c.color);f[1]=j[0],g[1]=j[1],d=j[2]}return[f,g,function(a){for(var c=b.inset?"inset ":" ",f=0;f<e.length;f++)c+=e[f](a[0][f])+" ";return d&&(c+=d(a[1])),c}]}}function e(b,c,d,e){function f(a){return{inset:a,color:[0,0,0,0],lengths:[{px:0},{px:0},{px:0},{px:0}]}}for(var g=[],h=[],i=0;i<d.length||i<e.length;i++){var j=d[i]||f(e[i].inset),k=e[i]||f(d[i].inset);g.push(j),h.push(k)}return a.mergeNestedRepeated(b,c,g,h)}var f=e.bind(null,d,", ");a.addPropertiesHandler(c,f,["box-shadow","text-shadow"])}(d),function(a,b){function c(a){return a.toFixed(3).replace(".000","")}function d(a,b,c){return Math.min(b,Math.max(a,c))}function e(a){if(/^\s*[-+]?(\d*\.)?\d+\s*$/.test(a))return Number(a)}function f(a,b){return[a,b,c]}function g(a,b){if(0!=a)return i(0,1/0)(a,b)}function h(a,b){return[a,b,function(a){return Math.round(d(1,1/0,a))}]}function i(a,b){return function(e,f){return[e,f,function(e){return c(d(a,b,e))}]}}function j(a,b){return[a,b,Math.round]}a.clamp=d,a.addPropertiesHandler(e,i(0,1/0),["border-image-width","line-height"]),a.addPropertiesHandler(e,i(0,1),["opacity","shape-image-threshold"]),a.addPropertiesHandler(e,g,["flex-grow","flex-shrink"]),a.addPropertiesHandler(e,h,["orphans","widows"]),a.addPropertiesHandler(e,j,["z-index"]),a.parseNumber=e,a.mergeNumbers=f,a.numberToString=c}(d,f),function(a,b){function c(a,b){if("visible"==a||"visible"==b)return[0,1,function(c){return c<=0?a:c>=1?b:"visible"}]}a.addPropertiesHandler(String,c,["visibility"])}(d),function(a,b){function c(a){a=a.trim(),f.fillStyle="#000",f.fillStyle=a;var b=f.fillStyle;if(f.fillStyle="#fff",f.fillStyle=a,b==f.fillStyle){f.fillRect(0,0,1,1);var c=f.getImageData(0,0,1,1).data;f.clearRect(0,0,1,1);var d=c[3]/255;return[c[0]*d,c[1]*d,c[2]*d,d]}}function d(b,c){return[b,c,function(b){function c(a){return Math.max(0,Math.min(255,a))}if(b[3])for(var d=0;d<3;d++)b[d]=Math.round(c(b[d]/b[3]));return b[3]=a.numberToString(a.clamp(0,1,b[3])),"rgba("+b.join(",")+")"}]}var e=document.createElementNS("http://www.w3.org/1999/xhtml","canvas");e.width=e.height=1;var f=e.getContext("2d");a.addPropertiesHandler(c,d,["background-color","border-bottom-color","border-left-color","border-right-color","border-top-color","color","outline-color","text-decoration-color"]),a.consumeColor=a.consumeParenthesised.bind(null,c),a.mergeColors=d}(d,f),function(a,b){function c(a,b){if(b=b.trim().toLowerCase(),"0"==b&&"px".search(a)>=0)return{px:0};if(/^[^(]*$|^calc/.test(b)){b=b.replace(/calc\(/g,"(");var c={};b=b.replace(a,function(a){return c[a]=null,"U"+a});for(var d="U("+a.source+")",e=b.replace(/[-+]?(\d*\.)?\d+/g,"N").replace(new RegExp("N"+d,"g"),"D").replace(/\s[+-]\s/g,"O").replace(/\s/g,""),f=[/N\*(D)/g,/(N|D)[*\/]N/g,/(N|D)O\1/g,/\((N|D)\)/g],g=0;g<f.length;)f[g].test(e)?(e=e.replace(f[g],"$1"),g=0):g++;if("D"==e){for(var h in c){var i=eval(b.replace(new RegExp("U"+h,"g"),"").replace(new RegExp(d,"g"),"*0"));if(!isFinite(i))return;c[h]=i}return c}}}function d(a,b){return e(a,b,!0)}function e(b,c,d){var e,f=[];for(e in b)f.push(e);for(e in c)f.indexOf(e)<0&&f.push(e);return b=f.map(function(a){return b[a]||0}),c=f.map(function(a){return c[a]||0}),[b,c,function(b){var c=b.map(function(c,e){return 1==b.length&&d&&(c=Math.max(c,0)),a.numberToString(c)+f[e]}).join(" + ");return b.length>1?"calc("+c+")":c}]}var f="px|em|ex|ch|rem|vw|vh|vmin|vmax|cm|mm|in|pt|pc",g=c.bind(null,new RegExp(f,"g")),h=c.bind(null,new RegExp(f+"|%","g")),i=c.bind(null,/deg|rad|grad|turn/g);a.parseLength=g,a.parseLengthOrPercent=h,a.consumeLengthOrPercent=a.consumeParenthesised.bind(null,h),a.parseAngle=i,a.mergeDimensions=e;var j=a.consumeParenthesised.bind(null,g),k=a.consumeRepeated.bind(void 0,j,/^/),l=a.consumeRepeated.bind(void 0,k,/^,/);a.consumeSizePairList=l;var m=function(a){var b=l(a);if(b&&""==b[1])return b[0]},n=a.mergeNestedRepeated.bind(void 0,d," "),o=a.mergeNestedRepeated.bind(void 0,n,",");a.mergeNonNegativeSizePair=n,a.addPropertiesHandler(m,o,["background-size"]),a.addPropertiesHandler(h,d,["border-bottom-width","border-image-width","border-left-width","border-right-width","border-top-width","flex-basis","font-size","height","line-height","max-height","max-width","outline-width","width"]),a.addPropertiesHandler(h,e,["border-bottom-left-radius","border-bottom-right-radius","border-top-left-radius","border-top-right-radius","bottom","left","letter-spacing","margin-bottom","margin-left","margin-right","margin-top","min-height","min-width","outline-offset","padding-bottom","padding-left","padding-right","padding-top","perspective","right","shape-margin","text-indent","top","vertical-align","word-spacing"])}(d,f),function(a,b){function c(b){return a.consumeLengthOrPercent(b)||a.consumeToken(/^auto/,b)}function d(b){var d=a.consumeList([a.ignore(a.consumeToken.bind(null,/^rect/)),a.ignore(a.consumeToken.bind(null,/^\(/)),a.consumeRepeated.bind(null,c,/^,/),a.ignore(a.consumeToken.bind(null,/^\)/))],b);if(d&&4==d[0].length)return d[0]}function e(b,c){return"auto"==b||"auto"==c?[!0,!1,function(d){var e=d?b:c;if("auto"==e)return"auto";var f=a.mergeDimensions(e,e);return f[2](f[0])}]:a.mergeDimensions(b,c)}function f(a){return"rect("+a+")"}var g=a.mergeWrappedNestedRepeated.bind(null,f,e,", ");a.parseBox=d,a.mergeBoxes=g,a.addPropertiesHandler(d,g,["clip"])}(d,f),function(a,b){function c(a){return function(b){var c=0;return a.map(function(a){return a===k?b[c++]:a})}}function d(a){return a}function e(b){if(b=b.toLowerCase().trim(),"none"==b)return[];for(var c,d=/\s*(\w+)\(([^)]*)\)/g,e=[],f=0;c=d.exec(b);){if(c.index!=f)return;f=c.index+c[0].length;var g=c[1],h=n[g];if(!h)return;var i=c[2].split(","),j=h[0];if(j.length<i.length)return;for(var k=[],o=0;o<j.length;o++){var p,q=i[o],r=j[o];if(p=q?{A:function(b){return"0"==b.trim()?m:a.parseAngle(b)},N:a.parseNumber,T:a.parseLengthOrPercent,L:a.parseLength}[r.toUpperCase()](q):{a:m,n:k[0],t:l}[r],void 0===p)return;k.push(p)}if(e.push({t:g,d:k}),d.lastIndex==b.length)return e}}function f(a){return a.toFixed(6).replace(".000000","")}function g(b,c){if(b.decompositionPair!==c){b.decompositionPair=c;var d=a.makeMatrixDecomposition(b)}if(c.decompositionPair!==b){c.decompositionPair=b;var e=a.makeMatrixDecomposition(c)}return null==d[0]||null==e[0]?[[!1],[!0],function(a){return a?c[0].d:b[0].d}]:(d[0].push(0),e[0].push(1),[d,e,function(b){var c=a.quat(d[0][3],e[0][3],b[5]),g=a.composeMatrix(b[0],b[1],b[2],c,b[4]),h=g.map(f).join(",");return h}])}function h(a){return a.replace(/[xy]/,"")}function i(a){return a.replace(/(x|y|z|3d)?$/,"3d")}function j(b,c){var d=a.makeMatrixDecomposition&&!0,e=!1;if(!b.length||!c.length){b.length||(e=!0,b=c,c=[]);for(var f=0;f<b.length;f++){var j=b[f].t,k=b[f].d,l="scale"==j.substr(0,5)?1:0;c.push({t:j,d:k.map(function(a){if("number"==typeof a)return l;var b={};for(var c in a)b[c]=l;return b})})}}var m=function(a,b){return"perspective"==a&&"perspective"==b||("matrix"==a||"matrix3d"==a)&&("matrix"==b||"matrix3d"==b)},o=[],p=[],q=[];if(b.length!=c.length){if(!d)return;var r=g(b,c);o=[r[0]],p=[r[1]],q=[["matrix",[r[2]]]]}else for(var f=0;f<b.length;f++){var j,s=b[f].t,t=c[f].t,u=b[f].d,v=c[f].d,w=n[s],x=n[t];if(m(s,t)){if(!d)return;var r=g([b[f]],[c[f]]);o.push(r[0]),p.push(r[1]),q.push(["matrix",[r[2]]])}else{if(s==t)j=s;else if(w[2]&&x[2]&&h(s)==h(t))j=h(s),u=w[2](u),v=x[2](v);else{if(!w[1]||!x[1]||i(s)!=i(t)){if(!d)return;var r=g(b,c);o=[r[0]],p=[r[1]],q=[["matrix",[r[2]]]];break}j=i(s),u=w[1](u),v=x[1](v)}for(var y=[],z=[],A=[],B=0;B<u.length;B++){var C="number"==typeof u[B]?a.mergeNumbers:a.mergeDimensions,r=C(u[B],v[B]);y[B]=r[0],z[B]=r[1],A.push(r[2])}o.push(y),p.push(z),q.push([j,A])}}if(e){var D=o;o=p,p=D}return[o,p,function(a){return a.map(function(a,b){var c=a.map(function(a,c){return q[b][1][c](a)}).join(",");return"matrix"==q[b][0]&&16==c.split(",").length&&(q[b][0]="matrix3d"),q[b][0]+"("+c+")"}).join(" ")}]}var k=null,l={px:0},m={deg:0},n={matrix:["NNNNNN",[k,k,0,0,k,k,0,0,0,0,1,0,k,k,0,1],d],matrix3d:["NNNNNNNNNNNNNNNN",d],rotate:["A"],rotatex:["A"],rotatey:["A"],rotatez:["A"],rotate3d:["NNNA"],perspective:["L"],scale:["Nn",c([k,k,1]),d],scalex:["N",c([k,1,1]),c([k,1])],scaley:["N",c([1,k,1]),c([1,k])],scalez:["N",c([1,1,k])],scale3d:["NNN",d],skew:["Aa",null,d],skewx:["A",null,c([k,m])],skewy:["A",null,c([m,k])],translate:["Tt",c([k,k,l]),d],translatex:["T",c([k,l,l]),c([k,l])],translatey:["T",c([l,k,l]),c([l,k])],translatez:["L",c([l,l,k])],translate3d:["TTL",d]};a.addPropertiesHandler(e,j,["transform"])}(d,f),function(a,b){function c(a,b){b.concat([a]).forEach(function(b){b in document.documentElement.style&&(d[a]=b)})}var d={};c("transform",["webkitTransform","msTransform"]),c("transformOrigin",["webkitTransformOrigin"]),c("perspective",["webkitPerspective"]),c("perspectiveOrigin",["webkitPerspectiveOrigin"]),a.propertyName=function(a){return d[a]||a}}(d,f)}(),!function(){if(void 0===document.createElement("div").animate([]).oncancel){var a;if(window.performance&&performance.now)var a=function(){return performance.now()};else var a=function(){return Date.now()};var b=function(a,b,c){this.target=a,this.currentTime=b,this.timelineTime=c,this.type="cancel",this.bubbles=!1,this.cancelable=!1,
+this.currentTarget=a,this.defaultPrevented=!1,this.eventPhase=Event.AT_TARGET,this.timeStamp=Date.now()},c=window.Element.prototype.animate;window.Element.prototype.animate=function(d,e){var f=c.call(this,d,e);f._cancelHandlers=[],f.oncancel=null;var g=f.cancel;f.cancel=function(){g.call(this);var c=new b(this,null,a()),d=this._cancelHandlers.concat(this.oncancel?[this.oncancel]:[]);setTimeout(function(){d.forEach(function(a){a.call(c.target,c)})},0)};var h=f.addEventListener;f.addEventListener=function(a,b){"function"==typeof b&&"cancel"==a?this._cancelHandlers.push(b):h.call(this,a,b)};var i=f.removeEventListener;return f.removeEventListener=function(a,b){if("cancel"==a){var c=this._cancelHandlers.indexOf(b);c>=0&&this._cancelHandlers.splice(c,1)}else i.call(this,a,b)},f}}}(),function(a){var b=document.documentElement,c=null,d=!1;try{var e=getComputedStyle(b).getPropertyValue("opacity"),f="0"==e?"1":"0";c=b.animate({opacity:[f,f]},{duration:1}),c.currentTime=0,d=getComputedStyle(b).getPropertyValue("opacity")==f}catch(a){}finally{c&&c.cancel()}if(!d){var g=window.Element.prototype.animate;window.Element.prototype.animate=function(b,c){return window.Symbol&&Symbol.iterator&&Array.prototype.from&&b[Symbol.iterator]&&(b=Array.from(b)),Array.isArray(b)||null===b||(b=a.convertToArrayForm(b)),g.call(this,b,c)}}}(c),!function(a,b,c){function d(a){var c=b.timeline;c.currentTime=a,c._discardAnimations(),0==c._animations.length?f=!1:requestAnimationFrame(d)}var e=window.requestAnimationFrame;window.requestAnimationFrame=function(a){return e(function(c){b.timeline._updateAnimationsPromises(),a(c),b.timeline._updateAnimationsPromises()})},b.AnimationTimeline=function(){this._animations=[],this.currentTime=void 0},b.AnimationTimeline.prototype={getAnimations:function(){return this._discardAnimations(),this._animations.slice()},_updateAnimationsPromises:function(){b.animationsWithPromises=b.animationsWithPromises.filter(function(a){return a._updatePromises()})},_discardAnimations:function(){this._updateAnimationsPromises(),this._animations=this._animations.filter(function(a){return"finished"!=a.playState&&"idle"!=a.playState})},_play:function(a){var c=new b.Animation(a,this);return this._animations.push(c),b.restartWebAnimationsNextTick(),c._updatePromises(),c._animation.play(),c._updatePromises(),c},play:function(a){return a&&a.remove(),this._play(a)}};var f=!1;b.restartWebAnimationsNextTick=function(){f||(f=!0,requestAnimationFrame(d))};var g=new b.AnimationTimeline;b.timeline=g;try{Object.defineProperty(window.document,"timeline",{configurable:!0,get:function(){return g}})}catch(a){}try{window.document.timeline=g}catch(a){}}(c,e,f),function(a,b,c){b.animationsWithPromises=[],b.Animation=function(b,c){if(this.id="",b&&b._id&&(this.id=b._id),this.effect=b,b&&(b._animation=this),!c)throw new Error("Animation with null timeline is not supported");this._timeline=c,this._sequenceNumber=a.sequenceNumber++,this._holdTime=0,this._paused=!1,this._isGroup=!1,this._animation=null,this._childAnimations=[],this._callback=null,this._oldPlayState="idle",this._rebuildUnderlyingAnimation(),this._animation.cancel(),this._updatePromises()},b.Animation.prototype={_updatePromises:function(){var a=this._oldPlayState,b=this.playState;return this._readyPromise&&b!==a&&("idle"==b?(this._rejectReadyPromise(),this._readyPromise=void 0):"pending"==a?this._resolveReadyPromise():"pending"==b&&(this._readyPromise=void 0)),this._finishedPromise&&b!==a&&("idle"==b?(this._rejectFinishedPromise(),this._finishedPromise=void 0):"finished"==b?this._resolveFinishedPromise():"finished"==a&&(this._finishedPromise=void 0)),this._oldPlayState=this.playState,this._readyPromise||this._finishedPromise},_rebuildUnderlyingAnimation:function(){this._updatePromises();var a,c,d,e,f=!!this._animation;f&&(a=this.playbackRate,c=this._paused,d=this.startTime,e=this.currentTime,this._animation.cancel(),this._animation._wrapper=null,this._animation=null),(!this.effect||this.effect instanceof window.KeyframeEffect)&&(this._animation=b.newUnderlyingAnimationForKeyframeEffect(this.effect),b.bindAnimationForKeyframeEffect(this)),(this.effect instanceof window.SequenceEffect||this.effect instanceof window.GroupEffect)&&(this._animation=b.newUnderlyingAnimationForGroup(this.effect),b.bindAnimationForGroup(this)),this.effect&&this.effect._onsample&&b.bindAnimationForCustomEffect(this),f&&(1!=a&&(this.playbackRate=a),null!==d?this.startTime=d:null!==e?this.currentTime=e:null!==this._holdTime&&(this.currentTime=this._holdTime),c&&this.pause()),this._updatePromises()},_updateChildren:function(){if(this.effect&&"idle"!=this.playState){var a=this.effect._timing.delay;this._childAnimations.forEach(function(c){this._arrangeChildren(c,a),this.effect instanceof window.SequenceEffect&&(a+=b.groupChildDuration(c.effect))}.bind(this))}},_setExternalAnimation:function(a){if(this.effect&&this._isGroup)for(var b=0;b<this.effect.children.length;b++)this.effect.children[b]._animation=a,this._childAnimations[b]._setExternalAnimation(a)},_constructChildAnimations:function(){if(this.effect&&this._isGroup){var a=this.effect._timing.delay;this._removeChildAnimations(),this.effect.children.forEach(function(c){var d=b.timeline._play(c);this._childAnimations.push(d),d.playbackRate=this.playbackRate,this._paused&&d.pause(),c._animation=this.effect._animation,this._arrangeChildren(d,a),this.effect instanceof window.SequenceEffect&&(a+=b.groupChildDuration(c))}.bind(this))}},_arrangeChildren:function(a,b){null===this.startTime?a.currentTime=this.currentTime-b/this.playbackRate:a.startTime!==this.startTime+b/this.playbackRate&&(a.startTime=this.startTime+b/this.playbackRate)},get timeline(){return this._timeline},get playState(){return this._animation?this._animation.playState:"idle"},get finished(){return window.Promise?(this._finishedPromise||(b.animationsWithPromises.indexOf(this)==-1&&b.animationsWithPromises.push(this),this._finishedPromise=new Promise(function(a,b){this._resolveFinishedPromise=function(){a(this)},this._rejectFinishedPromise=function(){b({type:DOMException.ABORT_ERR,name:"AbortError"})}}.bind(this)),"finished"==this.playState&&this._resolveFinishedPromise()),this._finishedPromise):(console.warn("Animation Promises require JavaScript Promise constructor"),null)},get ready(){return window.Promise?(this._readyPromise||(b.animationsWithPromises.indexOf(this)==-1&&b.animationsWithPromises.push(this),this._readyPromise=new Promise(function(a,b){this._resolveReadyPromise=function(){a(this)},this._rejectReadyPromise=function(){b({type:DOMException.ABORT_ERR,name:"AbortError"})}}.bind(this)),"pending"!==this.playState&&this._resolveReadyPromise()),this._readyPromise):(console.warn("Animation Promises require JavaScript Promise constructor"),null)},get onfinish(){return this._animation.onfinish},set onfinish(a){"function"==typeof a?this._animation.onfinish=function(b){b.target=this,a.call(this,b)}.bind(this):this._animation.onfinish=a},get oncancel(){return this._animation.oncancel},set oncancel(a){"function"==typeof a?this._animation.oncancel=function(b){b.target=this,a.call(this,b)}.bind(this):this._animation.oncancel=a},get currentTime(){this._updatePromises();var a=this._animation.currentTime;return this._updatePromises(),a},set currentTime(a){this._updatePromises(),this._animation.currentTime=isFinite(a)?a:Math.sign(a)*Number.MAX_VALUE,this._register(),this._forEachChild(function(b,c){b.currentTime=a-c}),this._updatePromises()},get startTime(){return this._animation.startTime},set startTime(a){this._updatePromises(),this._animation.startTime=isFinite(a)?a:Math.sign(a)*Number.MAX_VALUE,this._register(),this._forEachChild(function(b,c){b.startTime=a+c}),this._updatePromises()},get playbackRate(){return this._animation.playbackRate},set playbackRate(a){this._updatePromises();var b=this.currentTime;this._animation.playbackRate=a,this._forEachChild(function(b){b.playbackRate=a}),null!==b&&(this.currentTime=b),this._updatePromises()},play:function(){this._updatePromises(),this._paused=!1,this._animation.play(),this._timeline._animations.indexOf(this)==-1&&this._timeline._animations.push(this),this._register(),b.awaitStartTime(this),this._forEachChild(function(a){var b=a.currentTime;a.play(),a.currentTime=b}),this._updatePromises()},pause:function(){this._updatePromises(),this.currentTime&&(this._holdTime=this.currentTime),this._animation.pause(),this._register(),this._forEachChild(function(a){a.pause()}),this._paused=!0,this._updatePromises()},finish:function(){this._updatePromises(),this._animation.finish(),this._register(),this._updatePromises()},cancel:function(){this._updatePromises(),this._animation.cancel(),this._register(),this._removeChildAnimations(),this._updatePromises()},reverse:function(){this._updatePromises();var a=this.currentTime;this._animation.reverse(),this._forEachChild(function(a){a.reverse()}),null!==a&&(this.currentTime=a),this._updatePromises()},addEventListener:function(a,b){var c=b;"function"==typeof b&&(c=function(a){a.target=this,b.call(this,a)}.bind(this),b._wrapper=c),this._animation.addEventListener(a,c)},removeEventListener:function(a,b){this._animation.removeEventListener(a,b&&b._wrapper||b)},_removeChildAnimations:function(){for(;this._childAnimations.length;)this._childAnimations.pop().cancel()},_forEachChild:function(b){var c=0;if(this.effect.children&&this._childAnimations.length<this.effect.children.length&&this._constructChildAnimations(),this._childAnimations.forEach(function(a){b.call(this,a,c),this.effect instanceof window.SequenceEffect&&(c+=a.effect.activeDuration)}.bind(this)),"pending"!=this.playState){var d=this.effect._timing,e=this.currentTime;null!==e&&(e=a.calculateIterationProgress(a.calculateActiveDuration(d),e,d)),(null==e||isNaN(e))&&this._removeChildAnimations()}}},window.Animation=b.Animation}(c,e,f),function(a,b,c){function d(b){this._frames=a.normalizeKeyframes(b)}function e(){for(var a=!1;i.length;){var b=i.shift();b._updateChildren(),a=!0}return a}var f=function(a){if(a._animation=void 0,a instanceof window.SequenceEffect||a instanceof window.GroupEffect)for(var b=0;b<a.children.length;b++)f(a.children[b])};b.removeMulti=function(a){for(var b=[],c=0;c<a.length;c++){var d=a[c];d._parent?(b.indexOf(d._parent)==-1&&b.push(d._parent),d._parent.children.splice(d._parent.children.indexOf(d),1),d._parent=null,f(d)):d._animation&&d._animation.effect==d&&(d._animation.cancel(),d._animation.effect=new KeyframeEffect(null,[]),d._animation._callback&&(d._animation._callback._animation=null),d._animation._rebuildUnderlyingAnimation(),f(d))}for(c=0;c<b.length;c++)b[c]._rebuild()},b.KeyframeEffect=function(b,c,e,f){return this.target=b,this._parent=null,e=a.numericTimingToObject(e),this._timingInput=a.cloneTimingInput(e),this._timing=a.normalizeTimingInput(e),this.timing=a.makeTiming(e,!1,this),this.timing._effect=this,"function"==typeof c?(a.deprecated("Custom KeyframeEffect","2015-06-22","Use KeyframeEffect.onsample instead."),this._normalizedKeyframes=c):this._normalizedKeyframes=new d(c),this._keyframes=c,this.activeDuration=a.calculateActiveDuration(this._timing),this._id=f,this},b.KeyframeEffect.prototype={getFrames:function(){return"function"==typeof this._normalizedKeyframes?this._normalizedKeyframes:this._normalizedKeyframes._frames},set onsample(a){if("function"==typeof this.getFrames())throw new Error("Setting onsample on custom effect KeyframeEffect is not supported.");this._onsample=a,this._animation&&this._animation._rebuildUnderlyingAnimation()},get parent(){return this._parent},clone:function(){if("function"==typeof this.getFrames())throw new Error("Cloning custom effects is not supported.");var b=new KeyframeEffect(this.target,[],a.cloneTimingInput(this._timingInput),this._id);return b._normalizedKeyframes=this._normalizedKeyframes,b._keyframes=this._keyframes,b},remove:function(){b.removeMulti([this])}};var g=Element.prototype.animate;Element.prototype.animate=function(a,c){var d="";return c&&c.id&&(d=c.id),b.timeline._play(new b.KeyframeEffect(this,a,c,d))};var h=document.createElementNS("http://www.w3.org/1999/xhtml","div");b.newUnderlyingAnimationForKeyframeEffect=function(a){if(a){var b=a.target||h,c=a._keyframes;"function"==typeof c&&(c=[]);var d=a._timingInput;d.id=a._id}else var b=h,c=[],d=0;return g.apply(b,[c,d])},b.bindAnimationForKeyframeEffect=function(a){a.effect&&"function"==typeof a.effect._normalizedKeyframes&&b.bindAnimationForCustomEffect(a)};var i=[];b.awaitStartTime=function(a){null===a.startTime&&a._isGroup&&(0==i.length&&requestAnimationFrame(e),i.push(a))};var j=window.getComputedStyle;Object.defineProperty(window,"getComputedStyle",{configurable:!0,enumerable:!0,value:function(){b.timeline._updateAnimationsPromises();var a=j.apply(this,arguments);return e()&&(a=j.apply(this,arguments)),b.timeline._updateAnimationsPromises(),a}}),window.KeyframeEffect=b.KeyframeEffect,window.Element.prototype.getAnimations=function(){return document.timeline.getAnimations().filter(function(a){return null!==a.effect&&a.effect.target==this}.bind(this))}}(c,e,f),function(a,b,c){function d(a){a._registered||(a._registered=!0,g.push(a),h||(h=!0,requestAnimationFrame(e)))}function e(a){var b=g;g=[],b.sort(function(a,b){return a._sequenceNumber-b._sequenceNumber}),b=b.filter(function(a){a();var b=a._animation?a._animation.playState:"idle";return"running"!=b&&"pending"!=b&&(a._registered=!1),a._registered}),g.push.apply(g,b),g.length?(h=!0,requestAnimationFrame(e)):h=!1}var f=(document.createElementNS("http://www.w3.org/1999/xhtml","div"),0);b.bindAnimationForCustomEffect=function(b){var c,e=b.effect.target,g="function"==typeof b.effect.getFrames();c=g?b.effect.getFrames():b.effect._onsample;var h=b.effect.timing,i=null;h=a.normalizeTimingInput(h);var j=function(){var d=j._animation?j._animation.currentTime:null;null!==d&&(d=a.calculateIterationProgress(a.calculateActiveDuration(h),d,h),isNaN(d)&&(d=null)),d!==i&&(g?c(d,e,b.effect):c(d,b.effect,b.effect._animation)),i=d};j._animation=b,j._registered=!1,j._sequenceNumber=f++,b._callback=j,d(j)};var g=[],h=!1;b.Animation.prototype._register=function(){this._callback&&d(this._callback)}}(c,e,f),function(a,b,c){function d(a){return a._timing.delay+a.activeDuration+a._timing.endDelay}function e(b,c,d){this._id=d,this._parent=null,this.children=b||[],this._reparent(this.children),c=a.numericTimingToObject(c),this._timingInput=a.cloneTimingInput(c),this._timing=a.normalizeTimingInput(c,!0),this.timing=a.makeTiming(c,!0,this),this.timing._effect=this,"auto"===this._timing.duration&&(this._timing.duration=this.activeDuration)}window.SequenceEffect=function(){e.apply(this,arguments)},window.GroupEffect=function(){e.apply(this,arguments)},e.prototype={_isAncestor:function(a){for(var b=this;null!==b;){if(b==a)return!0;b=b._parent}return!1},_rebuild:function(){for(var a=this;a;)"auto"===a.timing.duration&&(a._timing.duration=a.activeDuration),a=a._parent;this._animation&&this._animation._rebuildUnderlyingAnimation()},_reparent:function(a){b.removeMulti(a);for(var c=0;c<a.length;c++)a[c]._parent=this},_putChild:function(a,b){for(var c=b?"Cannot append an ancestor or self":"Cannot prepend an ancestor or self",d=0;d<a.length;d++)if(this._isAncestor(a[d]))throw{type:DOMException.HIERARCHY_REQUEST_ERR,name:"HierarchyRequestError",message:c};for(var d=0;d<a.length;d++)b?this.children.push(a[d]):this.children.unshift(a[d]);this._reparent(a),this._rebuild()},append:function(){this._putChild(arguments,!0)},prepend:function(){this._putChild(arguments,!1)},get parent(){return this._parent},get firstChild(){return this.children.length?this.children[0]:null},get lastChild(){return this.children.length?this.children[this.children.length-1]:null},clone:function(){for(var b=a.cloneTimingInput(this._timingInput),c=[],d=0;d<this.children.length;d++)c.push(this.children[d].clone());return this instanceof GroupEffect?new GroupEffect(c,b):new SequenceEffect(c,b)},remove:function(){b.removeMulti([this])}},window.SequenceEffect.prototype=Object.create(e.prototype),Object.defineProperty(window.SequenceEffect.prototype,"activeDuration",{get:function(){var a=0;return this.children.forEach(function(b){a+=d(b)}),Math.max(a,0)}}),window.GroupEffect.prototype=Object.create(e.prototype),Object.defineProperty(window.GroupEffect.prototype,"activeDuration",{get:function(){var a=0;return this.children.forEach(function(b){a=Math.max(a,d(b))}),a}}),b.newUnderlyingAnimationForGroup=function(c){var d,e=null,f=function(b){var c=d._wrapper;if(c&&"pending"!=c.playState&&c.effect)return null==b?void c._removeChildAnimations():0==b&&c.playbackRate<0&&(e||(e=a.normalizeTimingInput(c.effect.timing)),b=a.calculateIterationProgress(a.calculateActiveDuration(e),-1,e),isNaN(b)||null==b)?(c._forEachChild(function(a){a.currentTime=-1}),void c._removeChildAnimations()):void 0},g=new KeyframeEffect(null,[],c._timing,c._id);return g.onsample=f,d=b.timeline._play(g)},b.bindAnimationForGroup=function(a){a._animation._wrapper=a,a._isGroup=!0,b.awaitStartTime(a),a._constructChildAnimations(),a._setExternalAnimation(a)},b.groupChildDuration=d}(c,e,f),b.true=a}({},function(){return this}());
 //# sourceMappingURL=web-animations-next-lite.min.js.map
 Polymer({
 
@@ -31389,6 +32846,18 @@ Polymer({
           allowOutsideScroll: {
             type: Boolean,
             value: false
+          },
+
+          /**
+           * Callback for scroll events.
+           * @type {Function}
+           * @private
+           */
+          _boundOnCaptureScroll: {
+            type: Function,
+            value: function() {
+              return this._onCaptureScroll.bind(this);
+            }
           }
         },
 
@@ -31415,6 +32884,14 @@ Polymer({
           return this.focusTarget || this.containedElement;
         },
 
+        ready: function() {
+          // Memoized scrolling position, used to block scrolling outside.
+          this._scrollTop = 0;
+          this._scrollLeft = 0;
+          // Used to perform a non-blocking refit on scroll.
+          this._refitOnScrollRAF = null;
+        },
+
         detached: function() {
           this.cancelAnimation();
           Polymer.IronDropdownScrollManager.removeScrollLock(this);
@@ -31431,9 +32908,12 @@ Polymer({
             this.cancelAnimation();
             this.sizingTarget = this.containedElement || this.sizingTarget;
             this._updateAnimationConfig();
-            if (this.opened && !this.allowOutsideScroll) {
-              Polymer.IronDropdownScrollManager.pushScrollLock(this);
+            this._saveScrollPosition();
+            if (this.opened) {
+              document.addEventListener('scroll', this._boundOnCaptureScroll);
+              !this.allowOutsideScroll && Polymer.IronDropdownScrollManager.pushScrollLock(this);
             } else {
+              document.removeEventListener('scroll', this._boundOnCaptureScroll);
               Polymer.IronDropdownScrollManager.removeScrollLock(this);
             }
             Polymer.IronOverlayBehaviorImpl._openedChanged.apply(this, arguments);
@@ -31456,6 +32936,7 @@ Polymer({
          * Overridden from `IronOverlayBehavior`.
          */
         _renderClosed: function() {
+
           if (!this.noAnimations && this.animationConfig.close) {
             this.$.contentWrapper.classList.add('animating');
             this.playAnimation('close');
@@ -31476,6 +32957,47 @@ Polymer({
             this._finishRenderOpened();
           } else {
             this._finishRenderClosed();
+          }
+        },
+
+        _onCaptureScroll: function() {
+          if (!this.allowOutsideScroll) {
+            this._restoreScrollPosition();
+          } else {
+            this._refitOnScrollRAF && window.cancelAnimationFrame(this._refitOnScrollRAF);
+            this._refitOnScrollRAF = window.requestAnimationFrame(this.refit.bind(this));
+          }
+        },
+
+        /**
+         * Memoizes the scroll position of the outside scrolling element.
+         * @private
+         */
+        _saveScrollPosition: function() {
+          if (document.scrollingElement) {
+            this._scrollTop = document.scrollingElement.scrollTop;
+            this._scrollLeft = document.scrollingElement.scrollLeft;
+          } else {
+            // Since we don't know if is the body or html, get max.
+            this._scrollTop = Math.max(document.documentElement.scrollTop, document.body.scrollTop);
+            this._scrollLeft = Math.max(document.documentElement.scrollLeft, document.body.scrollLeft);
+          }
+        },
+
+        /**
+         * Resets the scroll position of the outside scrolling element.
+         * @private
+         */
+        _restoreScrollPosition: function() {
+          if (document.scrollingElement) {
+            document.scrollingElement.scrollTop = this._scrollTop;
+            document.scrollingElement.scrollLeft = this._scrollLeft;
+          } else {
+            // Since we don't know if is the body or html, set both.
+            document.documentElement.scrollTop = this._scrollTop;
+            document.documentElement.scrollLeft = this._scrollLeft;
+            document.body.scrollTop = this._scrollTop;
+            document.body.scrollLeft = this._scrollLeft;
           }
         },
 
@@ -31647,270 +33169,352 @@ Polymer({
     }
   });
 (function() {
-    'use strict';
+      'use strict';
 
-    var PaperMenuButton = Polymer({
-      is: 'paper-menu-button',
+      var config = {
+        ANIMATION_CUBIC_BEZIER: 'cubic-bezier(.3,.95,.5,1)',
+        MAX_ANIMATION_TIME_MS: 400
+      };
 
-      /**
-       * Fired when the dropdown opens.
-       *
-       * @event paper-dropdown-open
-       */
-
-      /**
-       * Fired when the dropdown closes.
-       *
-       * @event paper-dropdown-close
-       */
-
-      behaviors: [
-        Polymer.IronA11yKeysBehavior,
-        Polymer.IronControlState
-      ],
-
-      properties: {
+      var PaperMenuButton = Polymer({
+        is: 'paper-menu-button',
 
         /**
-         * True if the content is currently displayed.
+         * Fired when the dropdown opens.
+         *
+         * @event paper-dropdown-open
          */
-        opened: {
-          type: Boolean,
-          value: false,
-          notify: true,
-          observer: '_openedChanged'
+
+        /**
+         * Fired when the dropdown closes.
+         *
+         * @event paper-dropdown-close
+         */
+
+        behaviors: [
+          Polymer.IronA11yKeysBehavior,
+          Polymer.IronControlState
+        ],
+
+        properties: {
+          /**
+           * True if the content is currently displayed.
+           */
+          opened: {
+            type: Boolean,
+            value: false,
+            notify: true,
+            observer: '_openedChanged'
+          },
+
+          /**
+           * The orientation against which to align the menu dropdown
+           * horizontally relative to the dropdown trigger.
+           */
+          horizontalAlign: {
+            type: String,
+            value: 'left',
+            reflectToAttribute: true
+          },
+
+          /**
+           * The orientation against which to align the menu dropdown
+           * vertically relative to the dropdown trigger.
+           */
+          verticalAlign: {
+            type: String,
+            value: 'top',
+            reflectToAttribute: true
+          },
+
+          /**
+           * If true, the `horizontalAlign` and `verticalAlign` properties will
+           * be considered preferences instead of strict requirements when
+           * positioning the dropdown and may be changed if doing so reduces
+           * the area of the dropdown falling outside of `fitInto`.
+           */
+          dynamicAlign: {
+            type: Boolean
+          },
+
+          /**
+           * A pixel value that will be added to the position calculated for the
+           * given `horizontalAlign`. Use a negative value to offset to the
+           * left, or a positive value to offset to the right.
+           */
+          horizontalOffset: {
+            type: Number,
+            value: 0,
+            notify: true
+          },
+
+          /**
+           * A pixel value that will be added to the position calculated for the
+           * given `verticalAlign`. Use a negative value to offset towards the
+           * top, or a positive value to offset towards the bottom.
+           */
+          verticalOffset: {
+            type: Number,
+            value: 0,
+            notify: true
+          },
+
+          /**
+           * If true, the dropdown will be positioned so that it doesn't overlap
+           * the button.
+           */
+          noOverlap: {
+            type: Boolean
+          },
+
+          /**
+           * Set to true to disable animations when opening and closing the
+           * dropdown.
+           */
+          noAnimations: {
+            type: Boolean,
+            value: false
+          },
+
+          /**
+           * Set to true to disable automatically closing the dropdown after
+           * a selection has been made.
+           */
+          ignoreSelect: {
+            type: Boolean,
+            value: false
+          },
+
+          /**
+           * Set to true to enable automatically closing the dropdown after an
+           * item has been activated, even if the selection did not change.
+           */
+          closeOnActivate: {
+            type: Boolean,
+            value: false
+          },
+
+          /**
+           * An animation config. If provided, this will be used to animate the
+           * opening of the dropdown.
+           */
+          openAnimationConfig: {
+            type: Object,
+            value: function() {
+              return [{
+                name: 'fade-in-animation',
+                timing: {
+                  delay: 100,
+                  duration: 200
+                }
+              }, {
+                name: 'paper-menu-grow-width-animation',
+                timing: {
+                  delay: 100,
+                  duration: 150,
+                  easing: config.ANIMATION_CUBIC_BEZIER
+                }
+              }, {
+                name: 'paper-menu-grow-height-animation',
+                timing: {
+                  delay: 100,
+                  duration: 275,
+                  easing: config.ANIMATION_CUBIC_BEZIER
+                }
+              }];
+            }
+          },
+
+          /**
+           * An animation config. If provided, this will be used to animate the
+           * closing of the dropdown.
+           */
+          closeAnimationConfig: {
+            type: Object,
+            value: function() {
+              return [{
+                name: 'fade-out-animation',
+                timing: {
+                  duration: 150
+                }
+              }, {
+                name: 'paper-menu-shrink-width-animation',
+                timing: {
+                  delay: 100,
+                  duration: 50,
+                  easing: config.ANIMATION_CUBIC_BEZIER
+                }
+              }, {
+                name: 'paper-menu-shrink-height-animation',
+                timing: {
+                  duration: 200,
+                  easing: 'ease-in'
+                }
+              }];
+            }
+          },
+
+          /**
+           * By default, the dropdown will constrain scrolling on the page
+           * to itself when opened.
+           * Set to true in order to prevent scroll from being constrained
+           * to the dropdown when it opens.
+           */
+          allowOutsideScroll: {
+            type: Boolean,
+            value: false
+          },
+
+          /**
+           * Whether focus should be restored to the button when the menu closes.
+           */
+          restoreFocusOnClose: {
+            type: Boolean,
+            value: true
+          },
+
+          /**
+           * This is the element intended to be bound as the focus target
+           * for the `iron-dropdown` contained by `paper-menu-button`.
+           */
+          _dropdownContent: {
+            type: Object
+          }
+        },
+
+        hostAttributes: {
+          role: 'group',
+          'aria-haspopup': 'true'
+        },
+
+        listeners: {
+          'iron-activate': '_onIronActivate',
+          'iron-select': '_onIronSelect'
         },
 
         /**
-         * The orientation against which to align the menu dropdown
-         * horizontally relative to the dropdown trigger.
+         * The content element that is contained by the menu button, if any.
          */
-        horizontalAlign: {
-          type: String,
-          value: 'left',
-          reflectToAttribute: true
+        get contentElement() {
+          return Polymer.dom(this.$.content).getDistributedNodes()[0];
         },
 
         /**
-         * The orientation against which to align the menu dropdown
-         * vertically relative to the dropdown trigger.
+         * Toggles the drowpdown content between opened and closed.
          */
-        verticalAlign: {
-          type: String,
-          value: 'top',
-          reflectToAttribute: true
+        toggle: function() {
+          if (this.opened) {
+            this.close();
+          } else {
+            this.open();
+          }
         },
 
         /**
-         * A pixel value that will be added to the position calculated for the
-         * given `horizontalAlign`. Use a negative value to offset to the
-         * left, or a positive value to offset to the right.
+         * Make the dropdown content appear as an overlay positioned relative
+         * to the dropdown trigger.
          */
-        horizontalOffset: {
-          type: Number,
-          value: 0,
-          notify: true
+        open: function() {
+          if (this.disabled) {
+            return;
+          }
+
+          this.$.dropdown.open();
         },
 
         /**
-         * A pixel value that will be added to the position calculated for the
-         * given `verticalAlign`. Use a negative value to offset towards the
-         * top, or a positive value to offset towards the bottom.
+         * Hide the dropdown content.
          */
-        verticalOffset: {
-          type: Number,
-          value: 0,
-          notify: true
+        close: function() {
+          this.$.dropdown.close();
         },
 
         /**
-         * Set to true to disable animations when opening and closing the
+         * When an `iron-select` event is received, the dropdown should
+         * automatically close on the assumption that a value has been chosen.
+         *
+         * @param {CustomEvent} event A CustomEvent instance with type
+         * set to `"iron-select"`.
+         */
+        _onIronSelect: function(event) {
+          if (!this.ignoreSelect) {
+            this.close();
+          }
+        },
+
+        /**
+         * Closes the dropdown when an `iron-activate` event is received if
+         * `closeOnActivate` is true.
+         *
+         * @param {CustomEvent} event A CustomEvent of type 'iron-activate'.
+         */
+        _onIronActivate: function(event) {
+          if (this.closeOnActivate) {
+            this.close();
+          }
+        },
+
+        /**
+         * When the dropdown opens, the `paper-menu-button` fires `paper-open`.
+         * When the dropdown closes, the `paper-menu-button` fires `paper-close`.
+         *
+         * @param {boolean} opened True if the dropdown is opened, otherwise false.
+         * @param {boolean} oldOpened The previous value of `opened`.
+         */
+        _openedChanged: function(opened, oldOpened) {
+          if (opened) {
+            // TODO(cdata): Update this when we can measure changes in distributed
+            // children in an idiomatic way.
+            // We poke this property in case the element has changed. This will
+            // cause the focus target for the `iron-dropdown` to be updated as
+            // necessary:
+            this._dropdownContent = this.contentElement;
+            this.fire('paper-dropdown-open');
+          } else if (oldOpened != null) {
+            this.fire('paper-dropdown-close');
+          }
+        },
+
+        /**
+         * If the dropdown is open when disabled becomes true, close the
          * dropdown.
+         *
+         * @param {boolean} disabled True if disabled, otherwise false.
          */
-        noAnimations: {
-          type: Boolean,
-          value: false
-        },
-
-        /**
-         * Set to true to disable automatically closing the dropdown after
-         * a selection has been made.
-         */
-        ignoreSelect: {
-          type: Boolean,
-          value: false
-        },
-
-        /**
-         * An animation config. If provided, this will be used to animate the
-         * opening of the dropdown.
-         */
-        openAnimationConfig: {
-          type: Object,
-          value: function() {
-            return [{
-              name: 'fade-in-animation',
-              timing: {
-                delay: 100,
-                duration: 200
-              }
-            }, {
-              name: 'paper-menu-grow-width-animation',
-              timing: {
-                delay: 100,
-                duration: 150,
-                easing: PaperMenuButton.ANIMATION_CUBIC_BEZIER
-              }
-            }, {
-              name: 'paper-menu-grow-height-animation',
-              timing: {
-                delay: 100,
-                duration: 275,
-                easing: PaperMenuButton.ANIMATION_CUBIC_BEZIER
-              }
-            }];
+        _disabledChanged: function(disabled) {
+          Polymer.IronControlState._disabledChanged.apply(this, arguments);
+          if (disabled && this.opened) {
+            this.close();
           }
         },
 
-        /**
-         * An animation config. If provided, this will be used to animate the
-         * closing of the dropdown.
-         */
-        closeAnimationConfig: {
-          type: Object,
-          value: function() {
-            return [{
-              name: 'fade-out-animation',
-              timing: {
-                duration: 150
-              }
-            }, {
-              name: 'paper-menu-shrink-width-animation',
-              timing: {
-                delay: 100,
-                duration: 50,
-                easing: PaperMenuButton.ANIMATION_CUBIC_BEZIER
-              }
-            }, {
-              name: 'paper-menu-shrink-height-animation',
-              timing: {
-                duration: 200,
-                easing: 'ease-in'
-              }
-            }];
+        __onIronOverlayCanceled: function(event) {
+          var uiEvent = event.detail;
+          var target = Polymer.dom(uiEvent).rootTarget;
+          var trigger = this.$.trigger;
+          var path = Polymer.dom(uiEvent).path;
+
+          if (path.indexOf(trigger) > -1) {
+            event.preventDefault();
           }
-        },
-
-        /**
-         * This is the element intended to be bound as the focus target
-         * for the `iron-dropdown` contained by `paper-menu-button`.
-         */
-        _dropdownContent: {
-          type: Object
         }
-      },
+      });
 
-      hostAttributes: {
-        role: 'group',
-        'aria-haspopup': 'true'
-      },
+      Object.keys(config).forEach(function (key) {
+        PaperMenuButton[key] = config[key];
+      });
 
-      listeners: {
-        'iron-select': '_onIronSelect'
-      },
-
-      /**
-       * The content element that is contained by the menu button, if any.
-       */
-      get contentElement() {
-        return Polymer.dom(this.$.content).getDistributedNodes()[0];
-      },
-
-      /**
-       * Make the dropdown content appear as an overlay positioned relative
-       * to the dropdown trigger.
-       */
-      open: function() {
-        if (this.disabled) {
-          return;
-        }
-
-        this.$.dropdown.open();
-      },
-
-      /**
-       * Hide the dropdown content.
-       */
-      close: function() {
-        this.$.dropdown.close();
-      },
-
-      /**
-       * When an `iron-select` event is received, the dropdown should
-       * automatically close on the assumption that a value has been chosen.
-       *
-       * @param {CustomEvent} event A CustomEvent instance with type
-       * set to `"iron-select"`.
-       */
-      _onIronSelect: function(event) {
-        if (!this.ignoreSelect) {
-          this.close();
-        }
-      },
-
-      /**
-       * When the dropdown opens, the `paper-menu-button` fires `paper-open`.
-       * When the dropdown closes, the `paper-menu-button` fires `paper-close`.
-       *
-       * @param {boolean} opened True if the dropdown is opened, otherwise false.
-       * @param {boolean} oldOpened The previous value of `opened`.
-       */
-      _openedChanged: function(opened, oldOpened) {
-        if (opened) {
-          // TODO(cdata): Update this when we can measure changes in distributed
-          // children in an idiomatic way.
-          // We poke this property in case the element has changed. This will
-          // cause the focus target for the `iron-dropdown` to be updated as
-          // necessary:
-          this._dropdownContent = this.contentElement;
-          this.fire('paper-dropdown-open');
-        } else if (oldOpened != null) {
-          this.fire('paper-dropdown-close');
-        }
-      },
-
-      /**
-       * If the dropdown is open when disabled becomes true, close the
-       * dropdown.
-       *
-       * @param {boolean} disabled True if disabled, otherwise false.
-       */
-      _disabledChanged: function(disabled) {
-        Polymer.IronControlState._disabledChanged.apply(this, arguments);
-        if (disabled && this.opened) {
-          this.close();
-        }
-      }
-    });
-
-    PaperMenuButton.ANIMATION_CUBIC_BEZIER = 'cubic-bezier(.3,.95,.5,1)';
-    PaperMenuButton.MAX_ANIMATION_TIME_MS = 400;
-
-    Polymer.PaperMenuButton = PaperMenuButton;
-  })();
+      Polymer.PaperMenuButton = PaperMenuButton;
+    })();
 (function() {
+      Polymer({
+        is: 'paper-menu',
 
-  Polymer({
-
-    is: 'paper-menu',
-
-    behaviors: [
-      Polymer.IronMenuBehavior
-    ]
-
-  });
-
-})();
+        behaviors: [
+          Polymer.IronMenuBehavior
+        ]
+      });
+    })();
 (function() {
     'use strict';
 
@@ -32277,6 +33881,21 @@ Polymer({
         <div name="bar">Bar</div>
         <div name="zot">Zot</div>
       </iron-selector>
+
+  You can specify a default fallback with `fallbackSelection` in case the `selected` attribute does
+  not match the `attrForSelected` attribute of any elements.
+
+  Example:
+
+        <iron-selector attr-for-selected="name" selected="non-existing"
+                       fallback-selection="default">
+          <div name="foo">Foo</div>
+          <div name="bar">Bar</div>
+          <div name="default">Default</div>
+        </iron-selector>
+
+  Note: When the selector is multi, the selection will set to `fallbackSelection` iff
+  the number of matching elements is zero.
 
   `iron-selector` is not styled. Use the `iron-selected` CSS class to style the selected element.
 
@@ -32730,6 +34349,20 @@ Polymer({
                     value: function () {
                         return new Date();
                     }
+                },
+
+                /**
+                 * Minimum age of passenger
+                 */
+                minAge: {
+                    type: Number
+                },
+
+                /**
+                 * Maximum age of passenger
+                 */
+                maxAge: {
+                    type: Number
                 }
             },
 
@@ -32752,11 +34385,11 @@ Polymer({
                 var date = new Date(this.departureDate) || new Date();
                 switch (type.toLowerCase()) {
                     case 'child':
-                        var minDate = new Date(date.setFullYear(date.getFullYear() - 12));
+                        var minDate = new Date(date.setFullYear(date.getFullYear() - (this.maxAge || 12)));
                         minDate = minDate.setDate(minDate.getDate() + 1);
                         return new Date(minDate);
                     case 'infant':
-                        return new Date(date.setFullYear(date.getFullYear() - 2));
+                        return new Date(date.setFullYear(date.getFullYear() - (this.maxAge || 2)));
 
                 }
             },
@@ -32765,9 +34398,15 @@ Polymer({
                 var date = new Date(this.departureDate) || new Date();
                 switch (type.toLowerCase()) {
                     case 'adult':
-                        return new Date(date.setFullYear(date.getFullYear() - 12));
+                        if (!this.minAge && this.minAge !== 0) {
+                            this.minAge = 12;
+                        }
+                        return new Date(date.setFullYear(date.getFullYear() - this.minAge));
                     case 'child':
-                        var minDate = new Date(date.setFullYear(date.getFullYear() - 2));
+                        if (!this.minAge && this.minAge !== 0) {
+                            this.minAge = 2;
+                        }
+                        var minDate = new Date(date.setFullYear(date.getFullYear() - this.minAge));
                         minDate = minDate.setDate(minDate.getDate() - 1);
                         return new Date(minDate);
                     default:
@@ -33909,7 +35548,6 @@ Polymer({
     properties: {
 
         /**
-         * TODO: shouldn't this be named something like `logoSrc`?
          * The url of the image to be displayed in the footer
          * @type {String}
          */
@@ -33950,27 +35588,8 @@ Polymer({
         },
 
         /**
-         * The link to phone number (has protocol)
+         * Pass the copyright year
          * @type {String}
-         */
-        phoneHref: {
-            type: String,
-            reflectToAttribute: true,
-            computed: 'getPhone(phone)'
-        },
-
-        /**
-         * The link to email (has protocol)
-         * @type {String}
-         */
-        emailHref: {
-            type: String,
-            reflectToAttribute: true,
-            computed: 'getEmail(email)'
-        },
-
-        /**
-         * copy right year
          */
         copyRightYear: {
             type: String,
@@ -33978,21 +35597,2784 @@ Polymer({
         },
 
         /**
-         * copy right Text
+         * Pass the copyright Text
+         * @type {String}
          */
         copyRightText: {
             type: String,
             value: "All Rights Reserved."
         }
-    },
-
-    //TODO: this should be private
-    getPhone: function(a) {
-        return "tel:" + a;
-    },
-
-    //TODO: this should be private
-    getEmail: function(a) {
-        return "mailto:" + a;
     }
 });
+// Spectrum Colorpicker v1.7.0
+// https://github.com/bgrins/spectrum
+// Author: Brian Grinstead
+// License: MIT
+
+(function (factory) {
+    "use strict";
+
+    if (typeof define === 'function' && define.amd) { // AMD
+        define(['jquery'], factory);
+    }
+    else if (typeof exports == "object" && typeof module == "object") { // CommonJS
+        module.exports = factory;
+    }
+    else { // Browser
+        factory(jQuery);
+    }
+})(function($, undefined) {
+    "use strict";
+
+    var defaultOpts = {
+
+        // Callbacks
+        beforeShow: noop,
+        move: noop,
+        change: noop,
+        show: noop,
+        hide: noop,
+
+        // Options
+        color: false,
+        flat: false,
+        showInput: false,
+        allowEmpty: false,
+        showButtons: true,
+        clickoutFiresChange: true,
+        showInitial: false,
+        showPalette: false,
+        showPaletteOnly: false,
+        hideAfterPaletteSelect: false,
+        togglePaletteOnly: false,
+        showSelectionPalette: true,
+        localStorageKey: false,
+        appendTo: "body",
+        maxSelectionSize: 7,
+        cancelText: "cancel",
+        chooseText: "choose",
+        togglePaletteMoreText: "more",
+        togglePaletteLessText: "less",
+        clearText: "Clear Color Selection",
+        noColorSelectedText: "No Color Selected",
+        preferredFormat: false,
+        className: "", // Deprecated - use containerClassName and replacerClassName instead.
+        containerClassName: "",
+        replacerClassName: "",
+        showAlpha: false,
+        theme: "sp-light",
+        palette: [["#ffffff", "#000000", "#ff0000", "#ff8000", "#ffff00", "#008000", "#0000ff", "#4b0082", "#9400d3"]],
+        selectionPalette: [],
+        disabled: false,
+        offset: null
+    },
+    spectrums = [],
+    IE = !!/msie/i.exec( window.navigator.userAgent ),
+    rgbaSupport = (function() {
+        function contains( str, substr ) {
+            return !!~('' + str).indexOf(substr);
+        }
+
+        var elem = document.createElement('div');
+        var style = elem.style;
+        style.cssText = 'background-color:rgba(0,0,0,.5)';
+        return contains(style.backgroundColor, 'rgba') || contains(style.backgroundColor, 'hsla');
+    })(),
+    replaceInput = [
+        "<div class='sp-replacer'>",
+            "<div class='sp-preview'><div class='sp-preview-inner'></div></div>",
+            /*"<div class='sp-dd'>&#9660;</div>",*/
+        "</div>"
+    ].join(''),
+    markup = (function () {
+
+        // IE does not support gradients with multiple stops, so we need to simulate
+        //  that for the rainbow slider with 8 divs that each have a single gradient
+        var gradientFix = "";
+        if (IE) {
+            for (var i = 1; i <= 6; i++) {
+                gradientFix += "<div class='sp-" + i + "'></div>";
+            }
+        }
+
+        return [
+            "<div class='sp-container sp-hidden'>",
+                "<div class='sp-palette-container'>",
+                    "<div class='sp-palette sp-thumb sp-cf'></div>",
+                    "<div class='sp-palette-button-container sp-cf'>",
+                        "<button type='button' class='sp-palette-toggle'></button>",
+                    "</div>",
+                "</div>",
+                "<div class='sp-picker-container'>",
+                    "<div class='sp-top sp-cf'>",
+                        "<div class='sp-fill'></div>",
+                        "<div class='sp-top-inner'>",
+                            "<div class='sp-color'>",
+                                "<div class='sp-sat'>",
+                                    "<div class='sp-val'>",
+                                        "<div class='sp-dragger'></div>",
+                                    "</div>",
+                                "</div>",
+                            "</div>",
+                            "<div class='sp-clear sp-clear-display'>",
+                            "</div>",
+                            "<div class='sp-hue'>",
+                                "<div class='sp-slider'></div>",
+                                gradientFix,
+                            "</div>",
+                        "</div>",
+                        "<div class='sp-alpha'><div class='sp-alpha-inner'><div class='sp-alpha-handle'></div></div></div>",
+                    "</div>",
+                    "<div class='sp-input-container sp-cf'>",
+                        "<input class='sp-input' type='text' spellcheck='false'  />",
+                    "</div>",
+                    "<div class='sp-initial sp-thumb sp-cf'></div>",
+                    "<div class='sp-button-container sp-cf'>",
+                        "<a class='sp-cancel' href='#'></a>",
+                        "<button type='button' class='sp-choose'></button>",
+                    "</div>",
+                "</div>",
+            "</div>"
+        ].join("");
+    })();
+
+    function paletteTemplate (p, color, className, opts) {
+        var html = [];
+        for (var i = 0; i < p.length; i++) {
+            var current = p[i];
+            if(current) {
+                var tiny = tinycolor(current);
+                var c = tiny.toHsl().l < 0.5 ? "sp-thumb-el sp-thumb-dark" : "sp-thumb-el sp-thumb-light";
+                c += (tinycolor.equals(color, current)) ? " sp-thumb-active" : "";
+                var formattedString = tiny.toString(opts.preferredFormat || "rgb");
+                var swatchStyle = rgbaSupport ? ("background-color:" + tiny.toRgbString()) : "filter:" + tiny.toFilter();
+                html.push('<span title="' + formattedString + '" data-color="' + tiny.toRgbString() + '" class="' + c + '"><span class="sp-thumb-inner" style="' + swatchStyle + ';" /></span>');
+            } else {
+                var cls = 'sp-clear-display';
+                html.push($('<div />')
+                    .append($('<span data-color="" style="background-color:transparent;" class="' + cls + '"></span>')
+                        .attr('title', opts.noColorSelectedText)
+                    )
+                    .html()
+                );
+            }
+        }
+        return "<div class='sp-cf " + className + "'>" + html.join('') + "</div>";
+    }
+
+    function hideAll() {
+        for (var i = 0; i < spectrums.length; i++) {
+            if (spectrums[i]) {
+                spectrums[i].hide();
+            }
+        }
+    }
+
+    function instanceOptions(o, callbackContext) {
+        var opts = $.extend({}, defaultOpts, o);
+        opts.callbacks = {
+            'move': bind(opts.move, callbackContext),
+            'change': bind(opts.change, callbackContext),
+            'show': bind(opts.show, callbackContext),
+            'hide': bind(opts.hide, callbackContext),
+            'beforeShow': bind(opts.beforeShow, callbackContext)
+        };
+
+        return opts;
+    }
+
+    function spectrum(element, o) {
+
+        var opts = instanceOptions(o, element),
+            flat = opts.flat,
+            showSelectionPalette = opts.showSelectionPalette,
+            localStorageKey = opts.localStorageKey,
+            theme = opts.theme,
+            callbacks = opts.callbacks,
+            resize = throttle(reflow, 10),
+            visible = false,
+            isDragging = false,
+            dragWidth = 0,
+            dragHeight = 0,
+            dragHelperHeight = 0,
+            slideHeight = 0,
+            slideWidth = 0,
+            alphaWidth = 0,
+            alphaSlideHelperWidth = 0,
+            slideHelperHeight = 0,
+            currentHue = 0,
+            currentSaturation = 0,
+            currentValue = 0,
+            currentAlpha = 1,
+            palette = [],
+            paletteArray = [],
+            paletteLookup = {},
+            selectionPalette = opts.selectionPalette.slice(0),
+            maxSelectionSize = opts.maxSelectionSize,
+            draggingClass = "sp-dragging",
+            shiftMovementDirection = null;
+
+        var doc = element.ownerDocument,
+            body = doc.body,
+            boundElement = $(element),
+            disabled = false,
+            container = $(markup, doc).addClass(theme),
+            pickerContainer = container.find(".sp-picker-container"),
+            dragger = container.find(".sp-color"),
+            dragHelper = container.find(".sp-dragger"),
+            slider = container.find(".sp-hue"),
+            slideHelper = container.find(".sp-slider"),
+            alphaSliderInner = container.find(".sp-alpha-inner"),
+            alphaSlider = container.find(".sp-alpha"),
+            alphaSlideHelper = container.find(".sp-alpha-handle"),
+            textInput = container.find(".sp-input"),
+            paletteContainer = container.find(".sp-palette"),
+            initialColorContainer = container.find(".sp-initial"),
+            cancelButton = container.find(".sp-cancel"),
+            clearButton = container.find(".sp-clear"),
+            chooseButton = container.find(".sp-choose"),
+            toggleButton = container.find(".sp-palette-toggle"),
+            isInput = boundElement.is("input"),
+            isInputTypeColor = isInput && boundElement.attr("type") === "color" && inputTypeColorSupport(),
+            shouldReplace = isInput && !flat,
+            replacer = (shouldReplace) ? $(replaceInput).addClass(theme).addClass(opts.className).addClass(opts.replacerClassName) : $([]),
+            offsetElement = (shouldReplace) ? replacer : boundElement,
+            previewElement = replacer.find(".sp-preview-inner"),
+            initialColor = opts.color || (isInput && boundElement.val()),
+            colorOnShow = false,
+            preferredFormat = opts.preferredFormat,
+            currentPreferredFormat = preferredFormat,
+            clickoutFiresChange = !opts.showButtons || opts.clickoutFiresChange,
+            isEmpty = !initialColor,
+            allowEmpty = opts.allowEmpty && !isInputTypeColor;
+
+        function applyOptions() {
+
+            if (opts.showPaletteOnly) {
+                opts.showPalette = true;
+            }
+
+            toggleButton.text(opts.showPaletteOnly ? opts.togglePaletteMoreText : opts.togglePaletteLessText);
+
+            if (opts.palette) {
+                palette = opts.palette.slice(0);
+                paletteArray = $.isArray(palette[0]) ? palette : [palette];
+                paletteLookup = {};
+                for (var i = 0; i < paletteArray.length; i++) {
+                    for (var j = 0; j < paletteArray[i].length; j++) {
+                        var rgb = tinycolor(paletteArray[i][j]).toRgbString();
+                        paletteLookup[rgb] = true;
+                    }
+                }
+            }
+
+            container.toggleClass("sp-flat", flat);
+            container.toggleClass("sp-input-disabled", !opts.showInput);
+            container.toggleClass("sp-alpha-enabled", opts.showAlpha);
+            container.toggleClass("sp-clear-enabled", allowEmpty);
+            container.toggleClass("sp-buttons-disabled", !opts.showButtons);
+            container.toggleClass("sp-palette-buttons-disabled", !opts.togglePaletteOnly);
+            container.toggleClass("sp-palette-disabled", !opts.showPalette);
+            container.toggleClass("sp-palette-only", opts.showPaletteOnly);
+            container.toggleClass("sp-initial-disabled", !opts.showInitial);
+            container.addClass(opts.className).addClass(opts.containerClassName);
+
+            reflow();
+        }
+
+        function initialize() {
+
+            if (IE) {
+                container.find("*:not(input)").attr("unselectable", "on");
+            }
+
+            applyOptions();
+
+            if (shouldReplace) {
+                boundElement.after(replacer).hide();
+            }
+
+            if (!allowEmpty) {
+                clearButton.hide();
+            }
+
+            if (flat) {
+                boundElement.after(container).hide();
+            }
+            else {
+
+                var appendTo = opts.appendTo === "parent" ? boundElement.parent() : $(opts.appendTo);
+                if (appendTo.length !== 1) {
+                    appendTo = $("body");
+                }
+
+                appendTo.append(container);
+            }
+
+            updateSelectionPaletteFromStorage();
+
+            offsetElement.bind("click.spectrum touchstart.spectrum", function (e) {
+                if (!disabled) {
+                    toggle();
+                }
+
+                e.stopPropagation();
+
+                if (!$(e.target).is("input")) {
+                    e.preventDefault();
+                }
+            });
+
+            if(boundElement.is(":disabled") || (opts.disabled === true)) {
+                disable();
+            }
+
+            // Prevent clicks from bubbling up to document.  This would cause it to be hidden.
+            container.click(stopPropagation);
+
+            // Handle user typed input
+            textInput.change(setFromTextInput);
+            textInput.bind("paste", function () {
+                setTimeout(setFromTextInput, 1);
+            });
+            textInput.keydown(function (e) { if (e.keyCode == 13) { setFromTextInput(); } });
+
+            cancelButton.text(opts.cancelText);
+            cancelButton.bind("click.spectrum", function (e) {
+                e.stopPropagation();
+                e.preventDefault();
+                revert();
+                hide();
+            });
+
+            clearButton.attr("title", opts.clearText);
+            clearButton.bind("click.spectrum", function (e) {
+                e.stopPropagation();
+                e.preventDefault();
+                isEmpty = true;
+                move();
+
+                if(flat) {
+                    //for the flat style, this is a change event
+                    updateOriginalInput(true);
+                }
+            });
+
+            chooseButton.text(opts.chooseText);
+            chooseButton.bind("click.spectrum", function (e) {
+                e.stopPropagation();
+                e.preventDefault();
+
+                if (IE && textInput.is(":focus")) {
+                    textInput.trigger('change');
+                }
+
+                if (isValid()) {
+                    updateOriginalInput(true);
+                    hide();
+                }
+            });
+
+            toggleButton.text(opts.showPaletteOnly ? opts.togglePaletteMoreText : opts.togglePaletteLessText);
+            toggleButton.bind("click.spectrum", function (e) {
+                e.stopPropagation();
+                e.preventDefault();
+
+                opts.showPaletteOnly = !opts.showPaletteOnly;
+
+                // To make sure the Picker area is drawn on the right, next to the
+                // Palette area (and not below the palette), first move the Palette
+                // to the left to make space for the picker, plus 5px extra.
+                // The 'applyOptions' function puts the whole container back into place
+                // and takes care of the button-text and the sp-palette-only CSS class.
+                if (!opts.showPaletteOnly && !flat) {
+                    container.css('left', '-=' + (pickerContainer.outerWidth(true) + 5));
+                }
+                applyOptions();
+            });
+
+            draggable(alphaSlider, function (dragX, dragY, e) {
+                currentAlpha = (dragX / alphaWidth);
+                isEmpty = false;
+                if (e.shiftKey) {
+                    currentAlpha = Math.round(currentAlpha * 10) / 10;
+                }
+
+                move();
+            }, dragStart, dragStop);
+
+            draggable(slider, function (dragX, dragY) {
+                currentHue = parseFloat(dragY / slideHeight);
+                isEmpty = false;
+                if (!opts.showAlpha) {
+                    currentAlpha = 1;
+                }
+                move();
+            }, dragStart, dragStop);
+
+            draggable(dragger, function (dragX, dragY, e) {
+
+                // shift+drag should snap the movement to either the x or y axis.
+                if (!e.shiftKey) {
+                    shiftMovementDirection = null;
+                }
+                else if (!shiftMovementDirection) {
+                    var oldDragX = currentSaturation * dragWidth;
+                    var oldDragY = dragHeight - (currentValue * dragHeight);
+                    var furtherFromX = Math.abs(dragX - oldDragX) > Math.abs(dragY - oldDragY);
+
+                    shiftMovementDirection = furtherFromX ? "x" : "y";
+                }
+
+                var setSaturation = !shiftMovementDirection || shiftMovementDirection === "x";
+                var setValue = !shiftMovementDirection || shiftMovementDirection === "y";
+
+                if (setSaturation) {
+                    currentSaturation = parseFloat(dragX / dragWidth);
+                }
+                if (setValue) {
+                    currentValue = parseFloat((dragHeight - dragY) / dragHeight);
+                }
+
+                isEmpty = false;
+                if (!opts.showAlpha) {
+                    currentAlpha = 1;
+                }
+
+                move();
+
+            }, dragStart, dragStop);
+
+            if (!!initialColor) {
+                set(initialColor);
+
+                // In case color was black - update the preview UI and set the format
+                // since the set function will not run (default color is black).
+                updateUI();
+                currentPreferredFormat = preferredFormat || tinycolor(initialColor).format;
+
+                addColorToSelectionPalette(initialColor);
+            }
+            else {
+                updateUI();
+            }
+
+            if (flat) {
+                show();
+            }
+
+            function paletteElementClick(e) {
+                if (e.data && e.data.ignore) {
+                    set($(e.target).closest(".sp-thumb-el").data("color"));
+                    move();
+                }
+                else {
+                    set($(e.target).closest(".sp-thumb-el").data("color"));
+                    move();
+                    updateOriginalInput(true);
+                    if (opts.hideAfterPaletteSelect) {
+                      hide();
+                    }
+                }
+
+                return false;
+            }
+
+            var paletteEvent = IE ? "mousedown.spectrum" : "click.spectrum touchstart.spectrum";
+            paletteContainer.delegate(".sp-thumb-el", paletteEvent, paletteElementClick);
+            initialColorContainer.delegate(".sp-thumb-el:nth-child(1)", paletteEvent, { ignore: true }, paletteElementClick);
+        }
+
+        function updateSelectionPaletteFromStorage() {
+
+            if (localStorageKey && window.localStorage) {
+
+                // Migrate old palettes over to new format.  May want to remove this eventually.
+                try {
+                    var oldPalette = window.localStorage[localStorageKey].split(",#");
+                    if (oldPalette.length > 1) {
+                        delete window.localStorage[localStorageKey];
+                        $.each(oldPalette, function(i, c) {
+                             addColorToSelectionPalette(c);
+                        });
+                    }
+                }
+                catch(e) { }
+
+                try {
+                    selectionPalette = window.localStorage[localStorageKey].split(";");
+                }
+                catch (e) { }
+            }
+        }
+
+        function addColorToSelectionPalette(color) {
+            if (showSelectionPalette) {
+                var rgb = tinycolor(color).toRgbString();
+                if (!paletteLookup[rgb] && $.inArray(rgb, selectionPalette) === -1) {
+                    selectionPalette.push(rgb);
+                    while(selectionPalette.length > maxSelectionSize) {
+                        selectionPalette.shift();
+                    }
+                }
+
+                if (localStorageKey && window.localStorage) {
+                    try {
+                        window.localStorage[localStorageKey] = selectionPalette.join(";");
+                    }
+                    catch(e) { }
+                }
+            }
+        }
+
+        function getUniqueSelectionPalette() {
+            var unique = [];
+            if (opts.showPalette) {
+                for (var i = 0; i < selectionPalette.length; i++) {
+                    var rgb = tinycolor(selectionPalette[i]).toRgbString();
+
+                    if (!paletteLookup[rgb]) {
+                        unique.push(selectionPalette[i]);
+                    }
+                }
+            }
+
+            return unique.reverse().slice(0, opts.maxSelectionSize);
+        }
+
+        function drawPalette() {
+
+            var currentColor = get();
+
+            var html = $.map(paletteArray, function (palette, i) {
+                return paletteTemplate(palette, currentColor, "sp-palette-row sp-palette-row-" + i, opts);
+            });
+
+            updateSelectionPaletteFromStorage();
+
+            if (selectionPalette) {
+                html.push(paletteTemplate(getUniqueSelectionPalette(), currentColor, "sp-palette-row sp-palette-row-selection", opts));
+            }
+
+            paletteContainer.html(html.join(""));
+        }
+
+        function drawInitial() {
+            if (opts.showInitial) {
+                var initial = colorOnShow;
+                var current = get();
+                initialColorContainer.html(paletteTemplate([initial, current], current, "sp-palette-row-initial", opts));
+            }
+        }
+
+        function dragStart() {
+            if (dragHeight <= 0 || dragWidth <= 0 || slideHeight <= 0) {
+                reflow();
+            }
+            isDragging = true;
+            container.addClass(draggingClass);
+            shiftMovementDirection = null;
+            boundElement.trigger('dragstart.spectrum', [ get() ]);
+        }
+
+        function dragStop() {
+            isDragging = false;
+            container.removeClass(draggingClass);
+            boundElement.trigger('dragstop.spectrum', [ get() ]);
+        }
+
+        function setFromTextInput() {
+
+            var value = textInput.val();
+
+            if ((value === null || value === "") && allowEmpty) {
+                set(null);
+                updateOriginalInput(true);
+            }
+            else {
+                var tiny = tinycolor(value);
+                if (tiny.isValid()) {
+                    set(tiny);
+                    updateOriginalInput(true);
+                }
+                else {
+                    textInput.addClass("sp-validation-error");
+                }
+            }
+        }
+
+        function toggle() {
+            if (visible) {
+                hide();
+            }
+            else {
+                show();
+            }
+        }
+
+        function show() {
+            var event = $.Event('beforeShow.spectrum');
+
+            if (visible) {
+                reflow();
+                return;
+            }
+
+            boundElement.trigger(event, [ get() ]);
+
+            if (callbacks.beforeShow(get()) === false || event.isDefaultPrevented()) {
+                return;
+            }
+
+            hideAll();
+            visible = true;
+
+            $(doc).bind("keydown.spectrum", onkeydown);
+            $(doc).bind("click.spectrum", clickout);
+            $(window).bind("resize.spectrum", resize);
+            replacer.addClass("sp-active");
+            container.removeClass("sp-hidden");
+
+            reflow();
+            updateUI();
+
+            colorOnShow = get();
+
+            drawInitial();
+            callbacks.show(colorOnShow);
+            boundElement.trigger('show.spectrum', [ colorOnShow ]);
+        }
+
+        function onkeydown(e) {
+            // Close on ESC
+            if (e.keyCode === 27) {
+                hide();
+            }
+        }
+
+        function clickout(e) {
+            // Return on right click.
+            if (e.button == 2) { return; }
+
+            // If a drag event was happening during the mouseup, don't hide
+            // on click.
+            if (isDragging) { return; }
+
+            if (clickoutFiresChange) {
+                updateOriginalInput(true);
+            }
+            else {
+                revert();
+            }
+            hide();
+        }
+
+        function hide() {
+            // Return if hiding is unnecessary
+            if (!visible || flat) { return; }
+            visible = false;
+
+            $(doc).unbind("keydown.spectrum", onkeydown);
+            $(doc).unbind("click.spectrum", clickout);
+            $(window).unbind("resize.spectrum", resize);
+
+            replacer.removeClass("sp-active");
+            container.addClass("sp-hidden");
+
+            callbacks.hide(get());
+            boundElement.trigger('hide.spectrum', [ get() ]);
+        }
+
+        function revert() {
+            set(colorOnShow, true);
+        }
+
+        function set(color, ignoreFormatChange) {
+            if (tinycolor.equals(color, get())) {
+                // Update UI just in case a validation error needs
+                // to be cleared.
+                updateUI();
+                return;
+            }
+
+            var newColor, newHsv;
+            if (!color && allowEmpty) {
+                isEmpty = true;
+            } else {
+                isEmpty = false;
+                newColor = tinycolor(color);
+                newHsv = newColor.toHsv();
+
+                currentHue = (newHsv.h % 360) / 360;
+                currentSaturation = newHsv.s;
+                currentValue = newHsv.v;
+                currentAlpha = newHsv.a;
+            }
+            updateUI();
+
+            if (newColor && newColor.isValid() && !ignoreFormatChange) {
+                currentPreferredFormat = preferredFormat || newColor.getFormat();
+            }
+        }
+
+        function get(opts) {
+            opts = opts || { };
+
+            if (allowEmpty && isEmpty) {
+                return null;
+            }
+
+            return tinycolor.fromRatio({
+                h: currentHue,
+                s: currentSaturation,
+                v: currentValue,
+                a: Math.round(currentAlpha * 100) / 100
+            }, { format: opts.format || currentPreferredFormat });
+        }
+
+        function isValid() {
+            return !textInput.hasClass("sp-validation-error");
+        }
+
+        function move() {
+            updateUI();
+
+            callbacks.move(get());
+            boundElement.trigger('move.spectrum', [ get() ]);
+        }
+
+        function updateUI() {
+
+            textInput.removeClass("sp-validation-error");
+
+            updateHelperLocations();
+
+            // Update dragger background color (gradients take care of saturation and value).
+            var flatColor = tinycolor.fromRatio({ h: currentHue, s: 1, v: 1 });
+            dragger.css("background-color", flatColor.toHexString());
+
+            // Get a format that alpha will be included in (hex and names ignore alpha)
+            var format = currentPreferredFormat;
+            if (currentAlpha < 1 && !(currentAlpha === 0 && format === "name")) {
+                if (format === "hex" || format === "hex3" || format === "hex6" || format === "name") {
+                    format = "rgb";
+                }
+            }
+
+            var realColor = get({ format: format }),
+                displayColor = '';
+
+             //reset background info for preview element
+            previewElement.removeClass("sp-clear-display");
+            previewElement.css('background-color', 'transparent');
+
+            if (!realColor && allowEmpty) {
+                // Update the replaced elements background with icon indicating no color selection
+                previewElement.addClass("sp-clear-display");
+            }
+            else {
+                var realHex = realColor.toHexString(),
+                    realRgb = realColor.toRgbString();
+
+                // Update the replaced elements background color (with actual selected color)
+                if (rgbaSupport || realColor.alpha === 1) {
+                    previewElement.css("background-color", realRgb);
+                }
+                else {
+                    previewElement.css("background-color", "transparent");
+                    previewElement.css("filter", realColor.toFilter());
+                }
+
+                if (opts.showAlpha) {
+                    var rgb = realColor.toRgb();
+                    rgb.a = 0;
+                    var realAlpha = tinycolor(rgb).toRgbString();
+                    var gradient = "linear-gradient(left, " + realAlpha + ", " + realHex + ")";
+
+                    if (IE) {
+                        alphaSliderInner.css("filter", tinycolor(realAlpha).toFilter({ gradientType: 1 }, realHex));
+                    }
+                    else {
+                        alphaSliderInner.css("background", "-webkit-" + gradient);
+                        alphaSliderInner.css("background", "-moz-" + gradient);
+                        alphaSliderInner.css("background", "-ms-" + gradient);
+                        // Use current syntax gradient on unprefixed property.
+                        alphaSliderInner.css("background",
+                            "linear-gradient(to right, " + realAlpha + ", " + realHex + ")");
+                    }
+                }
+
+                displayColor = realColor.toString(format);
+            }
+
+            // Update the text entry input as it changes happen
+            if (opts.showInput) {
+                textInput.val(displayColor);
+            }
+
+            if (opts.showPalette) {
+                drawPalette();
+            }
+
+            drawInitial();
+        }
+
+        function updateHelperLocations() {
+            var s = currentSaturation;
+            var v = currentValue;
+
+            if(allowEmpty && isEmpty) {
+                //if selected color is empty, hide the helpers
+                alphaSlideHelper.hide();
+                slideHelper.hide();
+                dragHelper.hide();
+            }
+            else {
+                //make sure helpers are visible
+                alphaSlideHelper.show();
+                slideHelper.show();
+                dragHelper.show();
+
+                // Where to show the little circle in that displays your current selected color
+                var dragX = s * dragWidth;
+                var dragY = dragHeight - (v * dragHeight);
+                dragX = Math.max(
+                    -dragHelperHeight,
+                    Math.min(dragWidth - dragHelperHeight, dragX - dragHelperHeight)
+                );
+                dragY = Math.max(
+                    -dragHelperHeight,
+                    Math.min(dragHeight - dragHelperHeight, dragY - dragHelperHeight)
+                );
+                dragHelper.css({
+                    "top": dragY + "px",
+                    "left": dragX + "px"
+                });
+
+                var alphaX = currentAlpha * alphaWidth;
+                alphaSlideHelper.css({
+                    "left": (alphaX - (alphaSlideHelperWidth / 2)) + "px"
+                });
+
+                // Where to show the bar that displays your current selected hue
+                var slideY = (currentHue) * slideHeight;
+                slideHelper.css({
+                    "top": (slideY - slideHelperHeight) + "px"
+                });
+            }
+        }
+
+        function updateOriginalInput(fireCallback) {
+            var color = get(),
+                displayColor = '',
+                hasChanged = !tinycolor.equals(color, colorOnShow);
+
+            if (color) {
+                displayColor = color.toString(currentPreferredFormat);
+                // Update the selection palette with the current color
+                addColorToSelectionPalette(color);
+            }
+
+            if (isInput) {
+                boundElement.val(displayColor);
+            }
+
+            if (fireCallback && hasChanged) {
+                callbacks.change(color);
+                boundElement.trigger('change', [ color ]);
+            }
+        }
+
+        function reflow() {
+            dragWidth = dragger.width();
+            dragHeight = dragger.height();
+            dragHelperHeight = dragHelper.height();
+            slideWidth = slider.width();
+            slideHeight = slider.height();
+            slideHelperHeight = slideHelper.height();
+            alphaWidth = alphaSlider.width();
+            alphaSlideHelperWidth = alphaSlideHelper.width();
+
+            if (!flat) {
+                container.css("position", "absolute");
+                if (opts.offset) {
+                    container.offset(opts.offset);
+                } else {
+                    container.offset(getOffset(container, offsetElement));
+                }
+            }
+
+            updateHelperLocations();
+
+            if (opts.showPalette) {
+                drawPalette();
+            }
+
+            boundElement.trigger('reflow.spectrum');
+        }
+
+        function destroy() {
+            boundElement.show();
+            offsetElement.unbind("click.spectrum touchstart.spectrum");
+            container.remove();
+            replacer.remove();
+            spectrums[spect.id] = null;
+        }
+
+        function option(optionName, optionValue) {
+            if (optionName === undefined) {
+                return $.extend({}, opts);
+            }
+            if (optionValue === undefined) {
+                return opts[optionName];
+            }
+
+            opts[optionName] = optionValue;
+            applyOptions();
+        }
+
+        function enable() {
+            disabled = false;
+            boundElement.attr("disabled", false);
+            offsetElement.removeClass("sp-disabled");
+        }
+
+        function disable() {
+            hide();
+            disabled = true;
+            boundElement.attr("disabled", true);
+            offsetElement.addClass("sp-disabled");
+        }
+
+        function setOffset(coord) {
+            opts.offset = coord;
+            reflow();
+        }
+
+        initialize();
+
+        var spect = {
+            show: show,
+            hide: hide,
+            toggle: toggle,
+            reflow: reflow,
+            option: option,
+            enable: enable,
+            disable: disable,
+            offset: setOffset,
+            set: function (c) {
+                set(c);
+                updateOriginalInput();
+            },
+            get: get,
+            destroy: destroy,
+            container: container
+        };
+
+        spect.id = spectrums.push(spect) - 1;
+
+        return spect;
+    }
+
+    /**
+    * checkOffset - get the offset below/above and left/right element depending on screen position
+    * Thanks https://github.com/jquery/jquery-ui/blob/master/ui/jquery.ui.datepicker.js
+    */
+    function getOffset(picker, input) {
+        var extraY = 0;
+        var dpWidth = picker.outerWidth();
+        var dpHeight = picker.outerHeight();
+        var inputHeight = input.outerHeight();
+        var doc = picker[0].ownerDocument;
+        var docElem = doc.documentElement;
+        var viewWidth = docElem.clientWidth + $(doc).scrollLeft();
+        var viewHeight = docElem.clientHeight + $(doc).scrollTop();
+        var offset = input.offset();
+        offset.top += inputHeight;
+
+        offset.left -=
+            Math.min(offset.left, (offset.left + dpWidth > viewWidth && viewWidth > dpWidth) ?
+            Math.abs(offset.left + dpWidth - viewWidth) : 0);
+
+        offset.top -=
+            Math.min(offset.top, ((offset.top + dpHeight > viewHeight && viewHeight > dpHeight) ?
+            Math.abs(dpHeight + inputHeight - extraY) : extraY));
+
+        return offset;
+    }
+
+    /**
+    * noop - do nothing
+    */
+    function noop() {
+
+    }
+
+    /**
+    * stopPropagation - makes the code only doing this a little easier to read in line
+    */
+    function stopPropagation(e) {
+        e.stopPropagation();
+    }
+
+    /**
+    * Create a function bound to a given object
+    * Thanks to underscore.js
+    */
+    function bind(func, obj) {
+        var slice = Array.prototype.slice;
+        var args = slice.call(arguments, 2);
+        return function () {
+            return func.apply(obj, args.concat(slice.call(arguments)));
+        };
+    }
+
+    /**
+    * Lightweight drag helper.  Handles containment within the element, so that
+    * when dragging, the x is within [0,element.width] and y is within [0,element.height]
+    */
+    function draggable(element, onmove, onstart, onstop) {
+        onmove = onmove || function () { };
+        onstart = onstart || function () { };
+        onstop = onstop || function () { };
+        var doc = document;
+        var dragging = false;
+        var offset = {};
+        var maxHeight = 0;
+        var maxWidth = 0;
+        var hasTouch = ('ontouchstart' in window);
+
+        var duringDragEvents = {};
+        duringDragEvents["selectstart"] = prevent;
+        duringDragEvents["dragstart"] = prevent;
+        duringDragEvents["touchmove mousemove"] = move;
+        duringDragEvents["touchend mouseup"] = stop;
+
+        function prevent(e) {
+            if (e.stopPropagation) {
+                e.stopPropagation();
+            }
+            if (e.preventDefault) {
+                e.preventDefault();
+            }
+            e.returnValue = false;
+        }
+
+        function move(e) {
+            if (dragging) {
+                // Mouseup happened outside of window
+                if (IE && doc.documentMode < 9 && !e.button) {
+                    return stop();
+                }
+
+                var t0 = e.originalEvent && e.originalEvent.touches && e.originalEvent.touches[0];
+                var pageX = t0 && t0.pageX || e.pageX;
+                var pageY = t0 && t0.pageY || e.pageY;
+
+                var dragX = Math.max(0, Math.min(pageX - offset.left, maxWidth));
+                var dragY = Math.max(0, Math.min(pageY - offset.top, maxHeight));
+
+                if (hasTouch) {
+                    // Stop scrolling in iOS
+                    prevent(e);
+                }
+
+                onmove.apply(element, [dragX, dragY, e]);
+            }
+        }
+
+        function start(e) {
+            var rightclick = (e.which) ? (e.which == 3) : (e.button == 2);
+
+            if (!rightclick && !dragging) {
+                if (onstart.apply(element, arguments) !== false) {
+                    dragging = true;
+                    maxHeight = $(element).height();
+                    maxWidth = $(element).width();
+                    offset = $(element).offset();
+
+                    $(doc).bind(duringDragEvents);
+                    $(doc.body).addClass("sp-dragging");
+
+                    move(e);
+
+                    prevent(e);
+                }
+            }
+        }
+
+        function stop() {
+            if (dragging) {
+                $(doc).unbind(duringDragEvents);
+                $(doc.body).removeClass("sp-dragging");
+
+                // Wait a tick before notifying observers to allow the click event
+                // to fire in Chrome.
+                setTimeout(function() {
+                    onstop.apply(element, arguments);
+                }, 0);
+            }
+            dragging = false;
+        }
+
+        $(element).bind("touchstart mousedown", start);
+    }
+
+    function throttle(func, wait, debounce) {
+        var timeout;
+        return function () {
+            var context = this, args = arguments;
+            var throttler = function () {
+                timeout = null;
+                func.apply(context, args);
+            };
+            if (debounce) clearTimeout(timeout);
+            if (debounce || !timeout) timeout = setTimeout(throttler, wait);
+        };
+    }
+
+    function inputTypeColorSupport() {
+        return $.fn.spectrum.inputTypeColorSupport();
+    }
+
+    /**
+    * Define a jQuery plugin
+    */
+    var dataID = "spectrum.id";
+    $.fn.spectrum = function (opts, extra) {
+
+        if (typeof opts == "string") {
+
+            var returnValue = this;
+            var args = Array.prototype.slice.call( arguments, 1 );
+
+            this.each(function () {
+                var spect = spectrums[$(this).data(dataID)];
+                if (spect) {
+                    var method = spect[opts];
+                    if (!method) {
+                        throw new Error( "Spectrum: no such method: '" + opts + "'" );
+                    }
+
+                    if (opts == "get") {
+                        returnValue = spect.get();
+                    }
+                    else if (opts == "container") {
+                        returnValue = spect.container;
+                    }
+                    else if (opts == "option") {
+                        returnValue = spect.option.apply(spect, args);
+                    }
+                    else if (opts == "destroy") {
+                        spect.destroy();
+                        $(this).removeData(dataID);
+                    }
+                    else {
+                        method.apply(spect, args);
+                    }
+                }
+            });
+
+            return returnValue;
+        }
+
+        // Initializing a new instance of spectrum
+        return this.spectrum("destroy").each(function () {
+            var options = $.extend({}, opts, $(this).data());
+            var spect = spectrum(this, options);
+            $(this).data(dataID, spect.id);
+        });
+    };
+
+    $.fn.spectrum.load = true;
+    $.fn.spectrum.loadOpts = {};
+    $.fn.spectrum.draggable = draggable;
+    $.fn.spectrum.defaults = defaultOpts;
+    $.fn.spectrum.inputTypeColorSupport = function inputTypeColorSupport() {
+        if (typeof inputTypeColorSupport._cachedResult === "undefined") {
+            var colorInput = $("<input type='color' value='!' />")[0];
+            inputTypeColorSupport._cachedResult = colorInput.type === "color" && colorInput.value !== "!";
+        }
+        return inputTypeColorSupport._cachedResult;
+    };
+
+    $.spectrum = { };
+    $.spectrum.localization = { };
+    $.spectrum.palettes = { };
+
+    $.fn.spectrum.processNativeColorInputs = function () {
+        var colorInputs = $("input[type=color]");
+        if (colorInputs.length && !inputTypeColorSupport()) {
+            colorInputs.spectrum({
+                preferredFormat: "hex6"
+            });
+        }
+    };
+
+    // TinyColor v1.1.2
+    // https://github.com/bgrins/TinyColor
+    // Brian Grinstead, MIT License
+
+    (function() {
+
+    var trimLeft = /^[\s,#]+/,
+        trimRight = /\s+$/,
+        tinyCounter = 0,
+        math = Math,
+        mathRound = math.round,
+        mathMin = math.min,
+        mathMax = math.max,
+        mathRandom = math.random;
+
+    var tinycolor = function(color, opts) {
+
+        color = (color) ? color : '';
+        opts = opts || { };
+
+        // If input is already a tinycolor, return itself
+        if (color instanceof tinycolor) {
+           return color;
+        }
+        // If we are called as a function, call using new instead
+        if (!(this instanceof tinycolor)) {
+            return new tinycolor(color, opts);
+        }
+
+        var rgb = inputToRGB(color);
+        this._originalInput = color,
+        this._r = rgb.r,
+        this._g = rgb.g,
+        this._b = rgb.b,
+        this._a = rgb.a,
+        this._roundA = mathRound(100*this._a) / 100,
+        this._format = opts.format || rgb.format;
+        this._gradientType = opts.gradientType;
+
+        // Don't let the range of [0,255] come back in [0,1].
+        // Potentially lose a little bit of precision here, but will fix issues where
+        // .5 gets interpreted as half of the total, instead of half of 1
+        // If it was supposed to be 128, this was already taken care of by `inputToRgb`
+        if (this._r < 1) { this._r = mathRound(this._r); }
+        if (this._g < 1) { this._g = mathRound(this._g); }
+        if (this._b < 1) { this._b = mathRound(this._b); }
+
+        this._ok = rgb.ok;
+        this._tc_id = tinyCounter++;
+    };
+
+    tinycolor.prototype = {
+        isDark: function() {
+            return this.getBrightness() < 128;
+        },
+        isLight: function() {
+            return !this.isDark();
+        },
+        isValid: function() {
+            return this._ok;
+        },
+        getOriginalInput: function() {
+          return this._originalInput;
+        },
+        getFormat: function() {
+            return this._format;
+        },
+        getAlpha: function() {
+            return this._a;
+        },
+        getBrightness: function() {
+            var rgb = this.toRgb();
+            return (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+        },
+        setAlpha: function(value) {
+            this._a = boundAlpha(value);
+            this._roundA = mathRound(100*this._a) / 100;
+            return this;
+        },
+        toHsv: function() {
+            var hsv = rgbToHsv(this._r, this._g, this._b);
+            return { h: hsv.h * 360, s: hsv.s, v: hsv.v, a: this._a };
+        },
+        toHsvString: function() {
+            var hsv = rgbToHsv(this._r, this._g, this._b);
+            var h = mathRound(hsv.h * 360), s = mathRound(hsv.s * 100), v = mathRound(hsv.v * 100);
+            return (this._a == 1) ?
+              "hsv("  + h + ", " + s + "%, " + v + "%)" :
+              "hsva(" + h + ", " + s + "%, " + v + "%, "+ this._roundA + ")";
+        },
+        toHsl: function() {
+            var hsl = rgbToHsl(this._r, this._g, this._b);
+            return { h: hsl.h * 360, s: hsl.s, l: hsl.l, a: this._a };
+        },
+        toHslString: function() {
+            var hsl = rgbToHsl(this._r, this._g, this._b);
+            var h = mathRound(hsl.h * 360), s = mathRound(hsl.s * 100), l = mathRound(hsl.l * 100);
+            return (this._a == 1) ?
+              "hsl("  + h + ", " + s + "%, " + l + "%)" :
+              "hsla(" + h + ", " + s + "%, " + l + "%, "+ this._roundA + ")";
+        },
+        toHex: function(allow3Char) {
+            return rgbToHex(this._r, this._g, this._b, allow3Char);
+        },
+        toHexString: function(allow3Char) {
+            return '#' + this.toHex(allow3Char);
+        },
+        toHex8: function() {
+            return rgbaToHex(this._r, this._g, this._b, this._a);
+        },
+        toHex8String: function() {
+            return '#' + this.toHex8();
+        },
+        toRgb: function() {
+            return { r: mathRound(this._r), g: mathRound(this._g), b: mathRound(this._b), a: this._a };
+        },
+        toRgbString: function() {
+            return (this._a == 1) ?
+              "rgb("  + mathRound(this._r) + ", " + mathRound(this._g) + ", " + mathRound(this._b) + ")" :
+              "rgba(" + mathRound(this._r) + ", " + mathRound(this._g) + ", " + mathRound(this._b) + ", " + this._roundA + ")";
+        },
+        toPercentageRgb: function() {
+            return { r: mathRound(bound01(this._r, 255) * 100) + "%", g: mathRound(bound01(this._g, 255) * 100) + "%", b: mathRound(bound01(this._b, 255) * 100) + "%", a: this._a };
+        },
+        toPercentageRgbString: function() {
+            return (this._a == 1) ?
+              "rgb("  + mathRound(bound01(this._r, 255) * 100) + "%, " + mathRound(bound01(this._g, 255) * 100) + "%, " + mathRound(bound01(this._b, 255) * 100) + "%)" :
+              "rgba(" + mathRound(bound01(this._r, 255) * 100) + "%, " + mathRound(bound01(this._g, 255) * 100) + "%, " + mathRound(bound01(this._b, 255) * 100) + "%, " + this._roundA + ")";
+        },
+        toName: function() {
+            if (this._a === 0) {
+                return "transparent";
+            }
+
+            if (this._a < 1) {
+                return false;
+            }
+
+            return hexNames[rgbToHex(this._r, this._g, this._b, true)] || false;
+        },
+        toFilter: function(secondColor) {
+            var hex8String = '#' + rgbaToHex(this._r, this._g, this._b, this._a);
+            var secondHex8String = hex8String;
+            var gradientType = this._gradientType ? "GradientType = 1, " : "";
+
+            if (secondColor) {
+                var s = tinycolor(secondColor);
+                secondHex8String = s.toHex8String();
+            }
+
+            return "progid:DXImageTransform.Microsoft.gradient("+gradientType+"startColorstr="+hex8String+",endColorstr="+secondHex8String+")";
+        },
+        toString: function(format) {
+            var formatSet = !!format;
+            format = format || this._format;
+
+            var formattedString = false;
+            var hasAlpha = this._a < 1 && this._a >= 0;
+            var needsAlphaFormat = !formatSet && hasAlpha && (format === "hex" || format === "hex6" || format === "hex3" || format === "name");
+
+            if (needsAlphaFormat) {
+                // Special case for "transparent", all other non-alpha formats
+                // will return rgba when there is transparency.
+                if (format === "name" && this._a === 0) {
+                    return this.toName();
+                }
+                return this.toRgbString();
+            }
+            if (format === "rgb") {
+                formattedString = this.toRgbString();
+            }
+            if (format === "prgb") {
+                formattedString = this.toPercentageRgbString();
+            }
+            if (format === "hex" || format === "hex6") {
+                formattedString = this.toHexString();
+            }
+            if (format === "hex3") {
+                formattedString = this.toHexString(true);
+            }
+            if (format === "hex8") {
+                formattedString = this.toHex8String();
+            }
+            if (format === "name") {
+                formattedString = this.toName();
+            }
+            if (format === "hsl") {
+                formattedString = this.toHslString();
+            }
+            if (format === "hsv") {
+                formattedString = this.toHsvString();
+            }
+
+            return formattedString || this.toHexString();
+        },
+
+        _applyModification: function(fn, args) {
+            var color = fn.apply(null, [this].concat([].slice.call(args)));
+            this._r = color._r;
+            this._g = color._g;
+            this._b = color._b;
+            this.setAlpha(color._a);
+            return this;
+        },
+        lighten: function() {
+            return this._applyModification(lighten, arguments);
+        },
+        brighten: function() {
+            return this._applyModification(brighten, arguments);
+        },
+        darken: function() {
+            return this._applyModification(darken, arguments);
+        },
+        desaturate: function() {
+            return this._applyModification(desaturate, arguments);
+        },
+        saturate: function() {
+            return this._applyModification(saturate, arguments);
+        },
+        greyscale: function() {
+            return this._applyModification(greyscale, arguments);
+        },
+        spin: function() {
+            return this._applyModification(spin, arguments);
+        },
+
+        _applyCombination: function(fn, args) {
+            return fn.apply(null, [this].concat([].slice.call(args)));
+        },
+        analogous: function() {
+            return this._applyCombination(analogous, arguments);
+        },
+        complement: function() {
+            return this._applyCombination(complement, arguments);
+        },
+        monochromatic: function() {
+            return this._applyCombination(monochromatic, arguments);
+        },
+        splitcomplement: function() {
+            return this._applyCombination(splitcomplement, arguments);
+        },
+        triad: function() {
+            return this._applyCombination(triad, arguments);
+        },
+        tetrad: function() {
+            return this._applyCombination(tetrad, arguments);
+        }
+    };
+
+    // If input is an object, force 1 into "1.0" to handle ratios properly
+    // String input requires "1.0" as input, so 1 will be treated as 1
+    tinycolor.fromRatio = function(color, opts) {
+        if (typeof color == "object") {
+            var newColor = {};
+            for (var i in color) {
+                if (color.hasOwnProperty(i)) {
+                    if (i === "a") {
+                        newColor[i] = color[i];
+                    }
+                    else {
+                        newColor[i] = convertToPercentage(color[i]);
+                    }
+                }
+            }
+            color = newColor;
+        }
+
+        return tinycolor(color, opts);
+    };
+
+    // Given a string or object, convert that input to RGB
+    // Possible string inputs:
+    //
+    //     "red"
+    //     "#f00" or "f00"
+    //     "#ff0000" or "ff0000"
+    //     "#ff000000" or "ff000000"
+    //     "rgb 255 0 0" or "rgb (255, 0, 0)"
+    //     "rgb 1.0 0 0" or "rgb (1, 0, 0)"
+    //     "rgba (255, 0, 0, 1)" or "rgba 255, 0, 0, 1"
+    //     "rgba (1.0, 0, 0, 1)" or "rgba 1.0, 0, 0, 1"
+    //     "hsl(0, 100%, 50%)" or "hsl 0 100% 50%"
+    //     "hsla(0, 100%, 50%, 1)" or "hsla 0 100% 50%, 1"
+    //     "hsv(0, 100%, 100%)" or "hsv 0 100% 100%"
+    //
+    function inputToRGB(color) {
+
+        var rgb = { r: 0, g: 0, b: 0 };
+        var a = 1;
+        var ok = false;
+        var format = false;
+
+        if (typeof color == "string") {
+            color = stringInputToObject(color);
+        }
+
+        if (typeof color == "object") {
+            if (color.hasOwnProperty("r") && color.hasOwnProperty("g") && color.hasOwnProperty("b")) {
+                rgb = rgbToRgb(color.r, color.g, color.b);
+                ok = true;
+                format = String(color.r).substr(-1) === "%" ? "prgb" : "rgb";
+            }
+            else if (color.hasOwnProperty("h") && color.hasOwnProperty("s") && color.hasOwnProperty("v")) {
+                color.s = convertToPercentage(color.s);
+                color.v = convertToPercentage(color.v);
+                rgb = hsvToRgb(color.h, color.s, color.v);
+                ok = true;
+                format = "hsv";
+            }
+            else if (color.hasOwnProperty("h") && color.hasOwnProperty("s") && color.hasOwnProperty("l")) {
+                color.s = convertToPercentage(color.s);
+                color.l = convertToPercentage(color.l);
+                rgb = hslToRgb(color.h, color.s, color.l);
+                ok = true;
+                format = "hsl";
+            }
+
+            if (color.hasOwnProperty("a")) {
+                a = color.a;
+            }
+        }
+
+        a = boundAlpha(a);
+
+        return {
+            ok: ok,
+            format: color.format || format,
+            r: mathMin(255, mathMax(rgb.r, 0)),
+            g: mathMin(255, mathMax(rgb.g, 0)),
+            b: mathMin(255, mathMax(rgb.b, 0)),
+            a: a
+        };
+    }
+
+
+    // Conversion Functions
+    // --------------------
+
+    // `rgbToHsl`, `rgbToHsv`, `hslToRgb`, `hsvToRgb` modified from:
+    // <http://mjijackson.com/2008/02/rgb-to-hsl-and-rgb-to-hsv-color-model-conversion-algorithms-in-javascript>
+
+    // `rgbToRgb`
+    // Handle bounds / percentage checking to conform to CSS color spec
+    // <http://www.w3.org/TR/css3-color/>
+    // *Assumes:* r, g, b in [0, 255] or [0, 1]
+    // *Returns:* { r, g, b } in [0, 255]
+    function rgbToRgb(r, g, b){
+        return {
+            r: bound01(r, 255) * 255,
+            g: bound01(g, 255) * 255,
+            b: bound01(b, 255) * 255
+        };
+    }
+
+    // `rgbToHsl`
+    // Converts an RGB color value to HSL.
+    // *Assumes:* r, g, and b are contained in [0, 255] or [0, 1]
+    // *Returns:* { h, s, l } in [0,1]
+    function rgbToHsl(r, g, b) {
+
+        r = bound01(r, 255);
+        g = bound01(g, 255);
+        b = bound01(b, 255);
+
+        var max = mathMax(r, g, b), min = mathMin(r, g, b);
+        var h, s, l = (max + min) / 2;
+
+        if(max == min) {
+            h = s = 0; // achromatic
+        }
+        else {
+            var d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            switch(max) {
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                case g: h = (b - r) / d + 2; break;
+                case b: h = (r - g) / d + 4; break;
+            }
+
+            h /= 6;
+        }
+
+        return { h: h, s: s, l: l };
+    }
+
+    // `hslToRgb`
+    // Converts an HSL color value to RGB.
+    // *Assumes:* h is contained in [0, 1] or [0, 360] and s and l are contained [0, 1] or [0, 100]
+    // *Returns:* { r, g, b } in the set [0, 255]
+    function hslToRgb(h, s, l) {
+        var r, g, b;
+
+        h = bound01(h, 360);
+        s = bound01(s, 100);
+        l = bound01(l, 100);
+
+        function hue2rgb(p, q, t) {
+            if(t < 0) t += 1;
+            if(t > 1) t -= 1;
+            if(t < 1/6) return p + (q - p) * 6 * t;
+            if(t < 1/2) return q;
+            if(t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+            return p;
+        }
+
+        if(s === 0) {
+            r = g = b = l; // achromatic
+        }
+        else {
+            var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+            var p = 2 * l - q;
+            r = hue2rgb(p, q, h + 1/3);
+            g = hue2rgb(p, q, h);
+            b = hue2rgb(p, q, h - 1/3);
+        }
+
+        return { r: r * 255, g: g * 255, b: b * 255 };
+    }
+
+    // `rgbToHsv`
+    // Converts an RGB color value to HSV
+    // *Assumes:* r, g, and b are contained in the set [0, 255] or [0, 1]
+    // *Returns:* { h, s, v } in [0,1]
+    function rgbToHsv(r, g, b) {
+
+        r = bound01(r, 255);
+        g = bound01(g, 255);
+        b = bound01(b, 255);
+
+        var max = mathMax(r, g, b), min = mathMin(r, g, b);
+        var h, s, v = max;
+
+        var d = max - min;
+        s = max === 0 ? 0 : d / max;
+
+        if(max == min) {
+            h = 0; // achromatic
+        }
+        else {
+            switch(max) {
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                case g: h = (b - r) / d + 2; break;
+                case b: h = (r - g) / d + 4; break;
+            }
+            h /= 6;
+        }
+        return { h: h, s: s, v: v };
+    }
+
+    // `hsvToRgb`
+    // Converts an HSV color value to RGB.
+    // *Assumes:* h is contained in [0, 1] or [0, 360] and s and v are contained in [0, 1] or [0, 100]
+    // *Returns:* { r, g, b } in the set [0, 255]
+     function hsvToRgb(h, s, v) {
+
+        h = bound01(h, 360) * 6;
+        s = bound01(s, 100);
+        v = bound01(v, 100);
+
+        var i = math.floor(h),
+            f = h - i,
+            p = v * (1 - s),
+            q = v * (1 - f * s),
+            t = v * (1 - (1 - f) * s),
+            mod = i % 6,
+            r = [v, q, p, p, t, v][mod],
+            g = [t, v, v, q, p, p][mod],
+            b = [p, p, t, v, v, q][mod];
+
+        return { r: r * 255, g: g * 255, b: b * 255 };
+    }
+
+    // `rgbToHex`
+    // Converts an RGB color to hex
+    // Assumes r, g, and b are contained in the set [0, 255]
+    // Returns a 3 or 6 character hex
+    function rgbToHex(r, g, b, allow3Char) {
+
+        var hex = [
+            pad2(mathRound(r).toString(16)),
+            pad2(mathRound(g).toString(16)),
+            pad2(mathRound(b).toString(16))
+        ];
+
+        // Return a 3 character hex if possible
+        if (allow3Char && hex[0].charAt(0) == hex[0].charAt(1) && hex[1].charAt(0) == hex[1].charAt(1) && hex[2].charAt(0) == hex[2].charAt(1)) {
+            return hex[0].charAt(0) + hex[1].charAt(0) + hex[2].charAt(0);
+        }
+
+        return hex.join("");
+    }
+        // `rgbaToHex`
+        // Converts an RGBA color plus alpha transparency to hex
+        // Assumes r, g, b and a are contained in the set [0, 255]
+        // Returns an 8 character hex
+        function rgbaToHex(r, g, b, a) {
+
+            var hex = [
+                pad2(convertDecimalToHex(a)),
+                pad2(mathRound(r).toString(16)),
+                pad2(mathRound(g).toString(16)),
+                pad2(mathRound(b).toString(16))
+            ];
+
+            return hex.join("");
+        }
+
+    // `equals`
+    // Can be called with any tinycolor input
+    tinycolor.equals = function (color1, color2) {
+        if (!color1 || !color2) { return false; }
+        return tinycolor(color1).toRgbString() == tinycolor(color2).toRgbString();
+    };
+    tinycolor.random = function() {
+        return tinycolor.fromRatio({
+            r: mathRandom(),
+            g: mathRandom(),
+            b: mathRandom()
+        });
+    };
+
+
+    // Modification Functions
+    // ----------------------
+    // Thanks to less.js for some of the basics here
+    // <https://github.com/cloudhead/less.js/blob/master/lib/less/functions.js>
+
+    function desaturate(color, amount) {
+        amount = (amount === 0) ? 0 : (amount || 10);
+        var hsl = tinycolor(color).toHsl();
+        hsl.s -= amount / 100;
+        hsl.s = clamp01(hsl.s);
+        return tinycolor(hsl);
+    }
+
+    function saturate(color, amount) {
+        amount = (amount === 0) ? 0 : (amount || 10);
+        var hsl = tinycolor(color).toHsl();
+        hsl.s += amount / 100;
+        hsl.s = clamp01(hsl.s);
+        return tinycolor(hsl);
+    }
+
+    function greyscale(color) {
+        return tinycolor(color).desaturate(100);
+    }
+
+    function lighten (color, amount) {
+        amount = (amount === 0) ? 0 : (amount || 10);
+        var hsl = tinycolor(color).toHsl();
+        hsl.l += amount / 100;
+        hsl.l = clamp01(hsl.l);
+        return tinycolor(hsl);
+    }
+
+    function brighten(color, amount) {
+        amount = (amount === 0) ? 0 : (amount || 10);
+        var rgb = tinycolor(color).toRgb();
+        rgb.r = mathMax(0, mathMin(255, rgb.r - mathRound(255 * - (amount / 100))));
+        rgb.g = mathMax(0, mathMin(255, rgb.g - mathRound(255 * - (amount / 100))));
+        rgb.b = mathMax(0, mathMin(255, rgb.b - mathRound(255 * - (amount / 100))));
+        return tinycolor(rgb);
+    }
+
+    function darken (color, amount) {
+        amount = (amount === 0) ? 0 : (amount || 10);
+        var hsl = tinycolor(color).toHsl();
+        hsl.l -= amount / 100;
+        hsl.l = clamp01(hsl.l);
+        return tinycolor(hsl);
+    }
+
+    // Spin takes a positive or negative amount within [-360, 360] indicating the change of hue.
+    // Values outside of this range will be wrapped into this range.
+    function spin(color, amount) {
+        var hsl = tinycolor(color).toHsl();
+        var hue = (mathRound(hsl.h) + amount) % 360;
+        hsl.h = hue < 0 ? 360 + hue : hue;
+        return tinycolor(hsl);
+    }
+
+    // Combination Functions
+    // ---------------------
+    // Thanks to jQuery xColor for some of the ideas behind these
+    // <https://github.com/infusion/jQuery-xcolor/blob/master/jquery.xcolor.js>
+
+    function complement(color) {
+        var hsl = tinycolor(color).toHsl();
+        hsl.h = (hsl.h + 180) % 360;
+        return tinycolor(hsl);
+    }
+
+    function triad(color) {
+        var hsl = tinycolor(color).toHsl();
+        var h = hsl.h;
+        return [
+            tinycolor(color),
+            tinycolor({ h: (h + 120) % 360, s: hsl.s, l: hsl.l }),
+            tinycolor({ h: (h + 240) % 360, s: hsl.s, l: hsl.l })
+        ];
+    }
+
+    function tetrad(color) {
+        var hsl = tinycolor(color).toHsl();
+        var h = hsl.h;
+        return [
+            tinycolor(color),
+            tinycolor({ h: (h + 90) % 360, s: hsl.s, l: hsl.l }),
+            tinycolor({ h: (h + 180) % 360, s: hsl.s, l: hsl.l }),
+            tinycolor({ h: (h + 270) % 360, s: hsl.s, l: hsl.l })
+        ];
+    }
+
+    function splitcomplement(color) {
+        var hsl = tinycolor(color).toHsl();
+        var h = hsl.h;
+        return [
+            tinycolor(color),
+            tinycolor({ h: (h + 72) % 360, s: hsl.s, l: hsl.l}),
+            tinycolor({ h: (h + 216) % 360, s: hsl.s, l: hsl.l})
+        ];
+    }
+
+    function analogous(color, results, slices) {
+        results = results || 6;
+        slices = slices || 30;
+
+        var hsl = tinycolor(color).toHsl();
+        var part = 360 / slices;
+        var ret = [tinycolor(color)];
+
+        for (hsl.h = ((hsl.h - (part * results >> 1)) + 720) % 360; --results; ) {
+            hsl.h = (hsl.h + part) % 360;
+            ret.push(tinycolor(hsl));
+        }
+        return ret;
+    }
+
+    function monochromatic(color, results) {
+        results = results || 6;
+        var hsv = tinycolor(color).toHsv();
+        var h = hsv.h, s = hsv.s, v = hsv.v;
+        var ret = [];
+        var modification = 1 / results;
+
+        while (results--) {
+            ret.push(tinycolor({ h: h, s: s, v: v}));
+            v = (v + modification) % 1;
+        }
+
+        return ret;
+    }
+
+    // Utility Functions
+    // ---------------------
+
+    tinycolor.mix = function(color1, color2, amount) {
+        amount = (amount === 0) ? 0 : (amount || 50);
+
+        var rgb1 = tinycolor(color1).toRgb();
+        var rgb2 = tinycolor(color2).toRgb();
+
+        var p = amount / 100;
+        var w = p * 2 - 1;
+        var a = rgb2.a - rgb1.a;
+
+        var w1;
+
+        if (w * a == -1) {
+            w1 = w;
+        } else {
+            w1 = (w + a) / (1 + w * a);
+        }
+
+        w1 = (w1 + 1) / 2;
+
+        var w2 = 1 - w1;
+
+        var rgba = {
+            r: rgb2.r * w1 + rgb1.r * w2,
+            g: rgb2.g * w1 + rgb1.g * w2,
+            b: rgb2.b * w1 + rgb1.b * w2,
+            a: rgb2.a * p  + rgb1.a * (1 - p)
+        };
+
+        return tinycolor(rgba);
+    };
+
+
+    // Readability Functions
+    // ---------------------
+    // <http://www.w3.org/TR/AERT#color-contrast>
+
+    // `readability`
+    // Analyze the 2 colors and returns an object with the following properties:
+    //    `brightness`: difference in brightness between the two colors
+    //    `color`: difference in color/hue between the two colors
+    tinycolor.readability = function(color1, color2) {
+        var c1 = tinycolor(color1);
+        var c2 = tinycolor(color2);
+        var rgb1 = c1.toRgb();
+        var rgb2 = c2.toRgb();
+        var brightnessA = c1.getBrightness();
+        var brightnessB = c2.getBrightness();
+        var colorDiff = (
+            Math.max(rgb1.r, rgb2.r) - Math.min(rgb1.r, rgb2.r) +
+            Math.max(rgb1.g, rgb2.g) - Math.min(rgb1.g, rgb2.g) +
+            Math.max(rgb1.b, rgb2.b) - Math.min(rgb1.b, rgb2.b)
+        );
+
+        return {
+            brightness: Math.abs(brightnessA - brightnessB),
+            color: colorDiff
+        };
+    };
+
+    // `readable`
+    // http://www.w3.org/TR/AERT#color-contrast
+    // Ensure that foreground and background color combinations provide sufficient contrast.
+    // *Example*
+    //    tinycolor.isReadable("#000", "#111") => false
+    tinycolor.isReadable = function(color1, color2) {
+        var readability = tinycolor.readability(color1, color2);
+        return readability.brightness > 125 && readability.color > 500;
+    };
+
+    // `mostReadable`
+    // Given a base color and a list of possible foreground or background
+    // colors for that base, returns the most readable color.
+    // *Example*
+    //    tinycolor.mostReadable("#123", ["#fff", "#000"]) => "#000"
+    tinycolor.mostReadable = function(baseColor, colorList) {
+        var bestColor = null;
+        var bestScore = 0;
+        var bestIsReadable = false;
+        for (var i=0; i < colorList.length; i++) {
+
+            // We normalize both around the "acceptable" breaking point,
+            // but rank brightness constrast higher than hue.
+
+            var readability = tinycolor.readability(baseColor, colorList[i]);
+            var readable = readability.brightness > 125 && readability.color > 500;
+            var score = 3 * (readability.brightness / 125) + (readability.color / 500);
+
+            if ((readable && ! bestIsReadable) ||
+                (readable && bestIsReadable && score > bestScore) ||
+                ((! readable) && (! bestIsReadable) && score > bestScore)) {
+                bestIsReadable = readable;
+                bestScore = score;
+                bestColor = tinycolor(colorList[i]);
+            }
+        }
+        return bestColor;
+    };
+
+
+    // Big List of Colors
+    // ------------------
+    // <http://www.w3.org/TR/css3-color/#svg-color>
+    var names = tinycolor.names = {
+        aliceblue: "f0f8ff",
+        antiquewhite: "faebd7",
+        aqua: "0ff",
+        aquamarine: "7fffd4",
+        azure: "f0ffff",
+        beige: "f5f5dc",
+        bisque: "ffe4c4",
+        black: "000",
+        blanchedalmond: "ffebcd",
+        blue: "00f",
+        blueviolet: "8a2be2",
+        brown: "a52a2a",
+        burlywood: "deb887",
+        burntsienna: "ea7e5d",
+        cadetblue: "5f9ea0",
+        chartreuse: "7fff00",
+        chocolate: "d2691e",
+        coral: "ff7f50",
+        cornflowerblue: "6495ed",
+        cornsilk: "fff8dc",
+        crimson: "dc143c",
+        cyan: "0ff",
+        darkblue: "00008b",
+        darkcyan: "008b8b",
+        darkgoldenrod: "b8860b",
+        darkgray: "a9a9a9",
+        darkgreen: "006400",
+        darkgrey: "a9a9a9",
+        darkkhaki: "bdb76b",
+        darkmagenta: "8b008b",
+        darkolivegreen: "556b2f",
+        darkorange: "ff8c00",
+        darkorchid: "9932cc",
+        darkred: "8b0000",
+        darksalmon: "e9967a",
+        darkseagreen: "8fbc8f",
+        darkslateblue: "483d8b",
+        darkslategray: "2f4f4f",
+        darkslategrey: "2f4f4f",
+        darkturquoise: "00ced1",
+        darkviolet: "9400d3",
+        deeppink: "ff1493",
+        deepskyblue: "00bfff",
+        dimgray: "696969",
+        dimgrey: "696969",
+        dodgerblue: "1e90ff",
+        firebrick: "b22222",
+        floralwhite: "fffaf0",
+        forestgreen: "228b22",
+        fuchsia: "f0f",
+        gainsboro: "dcdcdc",
+        ghostwhite: "f8f8ff",
+        gold: "ffd700",
+        goldenrod: "daa520",
+        gray: "808080",
+        green: "008000",
+        greenyellow: "adff2f",
+        grey: "808080",
+        honeydew: "f0fff0",
+        hotpink: "ff69b4",
+        indianred: "cd5c5c",
+        indigo: "4b0082",
+        ivory: "fffff0",
+        khaki: "f0e68c",
+        lavender: "e6e6fa",
+        lavenderblush: "fff0f5",
+        lawngreen: "7cfc00",
+        lemonchiffon: "fffacd",
+        lightblue: "add8e6",
+        lightcoral: "f08080",
+        lightcyan: "e0ffff",
+        lightgoldenrodyellow: "fafad2",
+        lightgray: "d3d3d3",
+        lightgreen: "90ee90",
+        lightgrey: "d3d3d3",
+        lightpink: "ffb6c1",
+        lightsalmon: "ffa07a",
+        lightseagreen: "20b2aa",
+        lightskyblue: "87cefa",
+        lightslategray: "789",
+        lightslategrey: "789",
+        lightsteelblue: "b0c4de",
+        lightyellow: "ffffe0",
+        lime: "0f0",
+        limegreen: "32cd32",
+        linen: "faf0e6",
+        magenta: "f0f",
+        maroon: "800000",
+        mediumaquamarine: "66cdaa",
+        mediumblue: "0000cd",
+        mediumorchid: "ba55d3",
+        mediumpurple: "9370db",
+        mediumseagreen: "3cb371",
+        mediumslateblue: "7b68ee",
+        mediumspringgreen: "00fa9a",
+        mediumturquoise: "48d1cc",
+        mediumvioletred: "c71585",
+        midnightblue: "191970",
+        mintcream: "f5fffa",
+        mistyrose: "ffe4e1",
+        moccasin: "ffe4b5",
+        navajowhite: "ffdead",
+        navy: "000080",
+        oldlace: "fdf5e6",
+        olive: "808000",
+        olivedrab: "6b8e23",
+        orange: "ffa500",
+        orangered: "ff4500",
+        orchid: "da70d6",
+        palegoldenrod: "eee8aa",
+        palegreen: "98fb98",
+        paleturquoise: "afeeee",
+        palevioletred: "db7093",
+        papayawhip: "ffefd5",
+        peachpuff: "ffdab9",
+        peru: "cd853f",
+        pink: "ffc0cb",
+        plum: "dda0dd",
+        powderblue: "b0e0e6",
+        purple: "800080",
+        rebeccapurple: "663399",
+        red: "f00",
+        rosybrown: "bc8f8f",
+        royalblue: "4169e1",
+        saddlebrown: "8b4513",
+        salmon: "fa8072",
+        sandybrown: "f4a460",
+        seagreen: "2e8b57",
+        seashell: "fff5ee",
+        sienna: "a0522d",
+        silver: "c0c0c0",
+        skyblue: "87ceeb",
+        slateblue: "6a5acd",
+        slategray: "708090",
+        slategrey: "708090",
+        snow: "fffafa",
+        springgreen: "00ff7f",
+        steelblue: "4682b4",
+        tan: "d2b48c",
+        teal: "008080",
+        thistle: "d8bfd8",
+        tomato: "ff6347",
+        turquoise: "40e0d0",
+        violet: "ee82ee",
+        wheat: "f5deb3",
+        white: "fff",
+        whitesmoke: "f5f5f5",
+        yellow: "ff0",
+        yellowgreen: "9acd32"
+    };
+
+    // Make it easy to access colors via `hexNames[hex]`
+    var hexNames = tinycolor.hexNames = flip(names);
+
+
+    // Utilities
+    // ---------
+
+    // `{ 'name1': 'val1' }` becomes `{ 'val1': 'name1' }`
+    function flip(o) {
+        var flipped = { };
+        for (var i in o) {
+            if (o.hasOwnProperty(i)) {
+                flipped[o[i]] = i;
+            }
+        }
+        return flipped;
+    }
+
+    // Return a valid alpha value [0,1] with all invalid values being set to 1
+    function boundAlpha(a) {
+        a = parseFloat(a);
+
+        if (isNaN(a) || a < 0 || a > 1) {
+            a = 1;
+        }
+
+        return a;
+    }
+
+    // Take input from [0, n] and return it as [0, 1]
+    function bound01(n, max) {
+        if (isOnePointZero(n)) { n = "100%"; }
+
+        var processPercent = isPercentage(n);
+        n = mathMin(max, mathMax(0, parseFloat(n)));
+
+        // Automatically convert percentage into number
+        if (processPercent) {
+            n = parseInt(n * max, 10) / 100;
+        }
+
+        // Handle floating point rounding errors
+        if ((math.abs(n - max) < 0.000001)) {
+            return 1;
+        }
+
+        // Convert into [0, 1] range if it isn't already
+        return (n % max) / parseFloat(max);
+    }
+
+    // Force a number between 0 and 1
+    function clamp01(val) {
+        return mathMin(1, mathMax(0, val));
+    }
+
+    // Parse a base-16 hex value into a base-10 integer
+    function parseIntFromHex(val) {
+        return parseInt(val, 16);
+    }
+
+    // Need to handle 1.0 as 100%, since once it is a number, there is no difference between it and 1
+    // <http://stackoverflow.com/questions/7422072/javascript-how-to-detect-number-as-a-decimal-including-1-0>
+    function isOnePointZero(n) {
+        return typeof n == "string" && n.indexOf('.') != -1 && parseFloat(n) === 1;
+    }
+
+    // Check to see if string passed in is a percentage
+    function isPercentage(n) {
+        return typeof n === "string" && n.indexOf('%') != -1;
+    }
+
+    // Force a hex value to have 2 characters
+    function pad2(c) {
+        return c.length == 1 ? '0' + c : '' + c;
+    }
+
+    // Replace a decimal with it's percentage value
+    function convertToPercentage(n) {
+        if (n <= 1) {
+            n = (n * 100) + "%";
+        }
+
+        return n;
+    }
+
+    // Converts a decimal to a hex value
+    function convertDecimalToHex(d) {
+        return Math.round(parseFloat(d) * 255).toString(16);
+    }
+    // Converts a hex value to a decimal
+    function convertHexToDecimal(h) {
+        return (parseIntFromHex(h) / 255);
+    }
+
+    var matchers = (function() {
+
+        // <http://www.w3.org/TR/css3-values/#integers>
+        var CSS_INTEGER = "[-\\+]?\\d+%?";
+
+        // <http://www.w3.org/TR/css3-values/#number-value>
+        var CSS_NUMBER = "[-\\+]?\\d*\\.\\d+%?";
+
+        // Allow positive/negative integer/number.  Don't capture the either/or, just the entire outcome.
+        var CSS_UNIT = "(?:" + CSS_NUMBER + ")|(?:" + CSS_INTEGER + ")";
+
+        // Actual matching.
+        // Parentheses and commas are optional, but not required.
+        // Whitespace can take the place of commas or opening paren
+        var PERMISSIVE_MATCH3 = "[\\s|\\(]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")\\s*\\)?";
+        var PERMISSIVE_MATCH4 = "[\\s|\\(]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")\\s*\\)?";
+
+        return {
+            rgb: new RegExp("rgb" + PERMISSIVE_MATCH3),
+            rgba: new RegExp("rgba" + PERMISSIVE_MATCH4),
+            hsl: new RegExp("hsl" + PERMISSIVE_MATCH3),
+            hsla: new RegExp("hsla" + PERMISSIVE_MATCH4),
+            hsv: new RegExp("hsv" + PERMISSIVE_MATCH3),
+            hsva: new RegExp("hsva" + PERMISSIVE_MATCH4),
+            hex3: /^([0-9a-fA-F]{1})([0-9a-fA-F]{1})([0-9a-fA-F]{1})$/,
+            hex6: /^([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/,
+            hex8: /^([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/
+        };
+    })();
+
+    // `stringInputToObject`
+    // Permissive string parsing.  Take in a number of formats, and output an object
+    // based on detected format.  Returns `{ r, g, b }` or `{ h, s, l }` or `{ h, s, v}`
+    function stringInputToObject(color) {
+
+        color = color.replace(trimLeft,'').replace(trimRight, '').toLowerCase();
+        var named = false;
+        if (names[color]) {
+            color = names[color];
+            named = true;
+        }
+        else if (color == 'transparent') {
+            return { r: 0, g: 0, b: 0, a: 0, format: "name" };
+        }
+
+        // Try to match string input using regular expressions.
+        // Keep most of the number bounding out of this function - don't worry about [0,1] or [0,100] or [0,360]
+        // Just return an object and let the conversion functions handle that.
+        // This way the result will be the same whether the tinycolor is initialized with string or object.
+        var match;
+        if ((match = matchers.rgb.exec(color))) {
+            return { r: match[1], g: match[2], b: match[3] };
+        }
+        if ((match = matchers.rgba.exec(color))) {
+            return { r: match[1], g: match[2], b: match[3], a: match[4] };
+        }
+        if ((match = matchers.hsl.exec(color))) {
+            return { h: match[1], s: match[2], l: match[3] };
+        }
+        if ((match = matchers.hsla.exec(color))) {
+            return { h: match[1], s: match[2], l: match[3], a: match[4] };
+        }
+        if ((match = matchers.hsv.exec(color))) {
+            return { h: match[1], s: match[2], v: match[3] };
+        }
+        if ((match = matchers.hsva.exec(color))) {
+            return { h: match[1], s: match[2], v: match[3], a: match[4] };
+        }
+        if ((match = matchers.hex8.exec(color))) {
+            return {
+                a: convertHexToDecimal(match[1]),
+                r: parseIntFromHex(match[2]),
+                g: parseIntFromHex(match[3]),
+                b: parseIntFromHex(match[4]),
+                format: named ? "name" : "hex8"
+            };
+        }
+        if ((match = matchers.hex6.exec(color))) {
+            return {
+                r: parseIntFromHex(match[1]),
+                g: parseIntFromHex(match[2]),
+                b: parseIntFromHex(match[3]),
+                format: named ? "name" : "hex"
+            };
+        }
+        if ((match = matchers.hex3.exec(color))) {
+            return {
+                r: parseIntFromHex(match[1] + '' + match[1]),
+                g: parseIntFromHex(match[2] + '' + match[2]),
+                b: parseIntFromHex(match[3] + '' + match[3]),
+                format: named ? "name" : "hex"
+            };
+        }
+
+        return false;
+    }
+
+    window.tinycolor = tinycolor;
+    })();
+
+    $(function () {
+        if ($.fn.spectrum.load) {
+            $.fn.spectrum.processNativeColorInputs();
+        }
+    });
+
+});
+Polymer({
+    is: 't-colorpicker',
+
+    properties: {
+    
+    /**
+     * Name property
+    */
+    name: {
+      type: String,
+      value: '',
+      reflectToAttribute: true
+    },
+    
+      /**
+      *label:  Text
+      */
+      label: {
+        type:String,
+        reflectToAttribute:true,
+        value:'Pick a color'
+      },
+
+      /**
+       * No label float is to make the label either on the body or on the top.
+       */
+      noLabelFloat: {
+        type:Boolean,
+        reflectToAttribute:true,
+        value:false
+      },
+    
+      /**
+       * The initial color will be set with the color option. If you don't pass in a color, Spectrum will use the value attribute on the input.
+  The color parsing is based on the TinyColor plugin. This should parse any color string you throw at it.
+       */
+      color: {
+        type:String,
+        value:'#000000',
+        observer:'_hasColor'
+      },
+
+      /**
+       * Flat This means that it will always show up at full size, and be positioned as an inline-block element. Look to the left for a full sized flat picker.
+       */
+      flat: {
+        type:Boolean,
+        value:false
+      },
+
+
+      /**
+       * You can add an input to allow free form typing. The color parsing is very permissive in the allowed strings. See TinyColor for more details.
+       */
+      showInput: {
+        type:Boolean,
+        value:true  
+      },
+
+
+      /**
+       * Spectrum can show the color that was initially set when opening. This provides an easy way to click back to what was set when opened.
+       */
+      showInitial: {
+        type:Boolean,
+        value:true  
+      },
+
+
+      /**
+       * If you specify both the showInput, showInitial, and allowEmpty options, the CSS keeps things in order by wrapping the buttons to the bottom row, and shrinking the input. Note: this is all customizable via CSS.
+       */
+      allowEmpty: {
+        type:Boolean,
+        value:false
+      },
+
+
+      /**
+       * You can allow alpha transparency selection.
+       */
+      showAlpha: {
+        type:Boolean,
+        value:true
+      },
+
+
+      /**
+       * Spectrum can be automatically disabled if you pass in the disabled flag. Additionally, if the input that you initialize spectrum on is disabled, this will be the default value. Note: you cannot enable spectrum if the input is disabled (see below).
+       */
+      disabled: {
+        type:Boolean,
+        value:false,
+        reflectToAttribute:true,
+        notify:true,
+        observer:'_changeState'
+      },
+
+
+      /**
+       * If the localStorageKey option is defined, the selection will be saved in the browser's localStorage object
+       */
+      localStorageKey: {
+        type:String
+      },
+
+
+      /**
+       * Spectrum can show a palette below the colorpicker to make it convenient for users to choose from frequently or recently used colors. When the colorpicker is closed, the current color will be added to the palette if it isn't there already.
+       */
+      showPalette: {
+        type:Boolean,
+        value:false
+      },
+
+
+      /**
+       * If you'd like, spectrum can show the palettes you specify, and nothing else.
+       */
+      showPaletteOnly: {
+        type:Boolean,
+        value:false
+      },
+
+
+      /**
+       *Spectrum can show a button to toggle the colorpicker next to the palette. This way, the user can choose from a limited number of colors in the palette, but still be able to pick a color that's not in the palette.
+       */
+      togglePaletteOnly: {
+        type:Boolean,
+        value:false
+      },
+
+      /**
+       *You can have the colorpicker automatically hide after a palette color is selected.
+       */
+      hideAfterPaletteSelect: {
+        type:Boolean,
+        value:false
+      },
+
+      /**
+       * Spectrum can keep track of what has been selected by the user with the showSelectionPalette option..
+       */
+      showSelectionPalette: {
+        type:Boolean,
+        value:true
+      },
+
+
+      /**
+       * When clicking outside of the colorpicker, you can force it to fire a change event rather than having it revert the change. This is true by default.
+       */
+      clickoutFiresChange: {
+        type:Boolean,
+        value:true
+      },
+
+
+      /**
+       * You can set the button's text using cancelText and chooseText properties.
+       */
+      cancelText: {
+        type:String,
+        value: "cancelText"
+      },
+
+
+      /**
+       * You can set the button's text using cancelText and chooseText properties.
+       */
+      appendTo: {
+        type:String,
+        value: "#colorContainer"
+      },
+
+      /**
+       * You can set the button's text using cancelText and chooseText properties.
+       */
+      chooseText: {
+        type:String,
+        value: "chooseText"
+      },
+
+
+      /**
+       * You can also change the text on the Toggle Button with the options togglePaletteMoreText (default is "more") .
+       */
+      togglePaletteMoreText: {
+        type:String,
+        value:'more'
+      },
+
+
+      /**
+       * You can also change the text on the Toggle Button with the options togglePaletteLessText (default is "less").
+       */
+      togglePaletteLessText: {
+        type:String,
+        value:'less'
+      },
+
+
+      /**
+       * You can add an additional class name to the just the container element using the containerClassName property.
+       */
+      containerClassName: {
+        type:String
+      },
+
+
+      /**
+       * You can add an additional class name to just the replacer element using the replacerClassName property.
+       */
+      replacerClassName: {
+        type:String
+      },
+
+
+      /**
+       * You can set the format that is displayed in the text box. This will also change the format that is displayed in the titles from the palette swatches.
+       "hex","hex3","hsl","rgb","name", and none 
+       */
+      preferredFormat: {
+        type:String,
+        value:"hex"
+      },
+
+
+      /**
+       * This is how many elements are allowed in the selectionPallete at once.
+  Elements will be removed from the palette in first in - first out order if this limit is reached.
+       */
+      maxSelectionSize:{
+        type:Number
+      },
+
+
+      /**
+       * This attribute will put the format of the date selected in the place holder.
+       */
+      palette:{
+        type:Array
+      },
+
+
+      /**
+       * The default values inside of the selection palette. Make sure that showSelectionPalette and showPalette are both enabled.
+       */
+      selectionPalette: {
+        type:Array
+      },
+
+      /**
+       * The default values inside of the selection palette. Make sure that showSelectionPalette and showPalette are both enabled.
+       */
+      value: {
+        type:String,
+        value:"",
+        reflectToAttribute:true,
+        notify:true
+      }
+
+    },
+
+    attached:function(){
+      this._initiate();
+    },
+
+    ready:function(){
+      this._initiate();
+    },
+
+    _hasColor:function(){
+      if(this.color.length>0){
+        this.value = this.color;
+      }
+      this._initiate();
+    },
+    //to initiate the color picker...    
+    _initiate: function(){
+
+      var component = this;
+
+      var pickerSettings={
+
+          color: this.color,
+
+          flat: this.flat,
+
+          showInput: this.showInput,
+
+          hideAfterPaletteSelect: this.hideAfterPaletteSelect,
+
+          showInitial: this.showInitial,
+
+          allowEmpty: this.allowEmpty,
+
+          showAlpha: this.showAlpha,
+
+          disabled: this.disabled,
+
+          localStorageKey: this.localStorageKey,
+
+          showPalette: this.showPalette,
+
+          showPaletteOnly: this.showPaletteOnly,
+
+          togglePaletteOnly: this.togglePaletteOnly,
+
+          showSelectionPalette: this.showSelectionPalette,
+
+          clickoutFiresChange: this.clickoutFiresChange,
+
+          appendTo: this.appendTo,
+
+          togglePaletteMoreText: this.togglePaletteMoreText,
+
+          togglePaletteLessText: this.togglePaletteLessText,
+
+          containerClassName: this.containerClassName,
+
+          replacerClassName: this.replacerClassName,
+
+          preferredFormat: this.preferredFormat,
+
+          maxSelectionSize: this.maxSelectionSize,
+
+          palette: this.palette,
+
+          selectionPalette: this.selectionPalette,
+
+          change: function(color) {
+              //this.fire('color-selected');
+              
+          },
+
+          move: function(color) {
+              //this.fire('color-changed');
+          },
+
+          hide: function(color) {
+            component.value = $(this).val();
+            component.fire('color-selected');
+            /*if(component.noLabelFloat && component.value.length>0){
+              $('#label').hide();
+            }*/
+          }
+          
+      };
+      //console.log($(this.$.color))
+      $(this.$.color).spectrum(pickerSettings)
+      //alert(1);
+      //this._instance = this._input.spectrum(pickerSettings);
+      //this.picker = this._input.spectrum('picker');
+    },
+
+    show: function(){
+      $(this.$.color).spectrum('show');
+    },
+
+    /*
+    * Private method to clear the value
+    */
+    hide: function(){
+      $(this.$.color).spectrum('hide');
+    },
+
+    /*
+    * Public method to toggle the picker
+    */
+    toggle: function(){
+      $(this.$.color).spectrum('toggle');
+    },
+
+    /*
+    * Private method to toggle the state of the picker
+    */
+    _changeState: function(){
+      if(this.disabled){
+        $(this.$.color).spectrum('disable');
+      }else{
+        $(this.$.color).spectrum('enable');
+      }
+    },
+
+    /**
+     * Function to validate if the date is selected
+     */
+     
+    validate:function(){
+      return true;
+    }
+
+  });
+Polymer({
+      is: 'hotel-itinerary',
+
+      properties: {
+        itinerary: {
+          type: Object,
+          value: function() {
+            return {};
+          }
+        }
+      },
+
+      observers: ['_fareComponentsChanged(itinerary.fare.components)'],
+
+      behaviors: [TravelNxt.Behaviors.FareBehavior],
+
+      _fareComponentsChanged: function(components) {
+        this._components = components;
+        //this.notifyPath('_components', components);
+      },
+
+      _getLowerCase:function(text){
+        text = text || "";
+        return text.toLowerCase();
+      },
+
+      _numberToArray: function(number) {
+        var arr = [];
+        for (var i = 0; i < number; i++) {
+          arr.push(i);
+        };
+        return arr;
+      },
+
+      _getDisplayFare: function(amount, checkIn, checkOut) {
+        if (amount) {
+          return Math.ceil(amount / this._dateDiff(checkIn, checkOut));
+        }
+        return null;
+      },
+
+      _isDiscountApplicable: function (strikeOffPrice, displayPrice) {
+        return strikeOffPrice.money.amount > displayPrice.money.amount;
+      },
+
+      _dateDiff: function(fromDate, toDate) {
+        if (!fromDate || !toDate)
+          return 0;
+        if (typeof fromDate == 'string') {
+          fromDate = new Date(fromDate);
+        }
+        if (typeof toDate == 'string') {
+          toDate = new Date(toDate);
+        }
+        var diff = toDate - fromDate;
+        var divideBy = (24 * 60 * 60 * 1000);
+
+        return Math.floor(diff / divideBy);
+      }
+    });

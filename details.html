@@ -76,55 +76,11 @@
           </t-hotel-room-policy-provider>
         </t-hotel-room-list>
       </div>
-      <!-- FIXME: the details should also be in it's own component -->
       <div class="details-tab">
-        <div class="section-small font-12 secondary-text">
-          <template is="dom-repeat" items="{{itinerary.descriptions}}">
-            <template is="dom-if" if="{{item.key}}">
-              <div class="margin-bottom font-14 primary-text font-semi">{{item.key}} </div>
-            </template>
-            <div class="margin-bottom">{{item.value}}</div>
-            <div class="border-bottom margin-bottom"></div>
-          </template>
-          <template is="dom-if" if="{{displayAmenities.length}}">
-            <div class="margin-bottom font-semi font-14 primary-text">Amenities</div>
-            <div class="layout horizontal wrap">
-              <template is="dom-repeat" items="{{displayAmenities}}" as="amenity">
-                <div class="margin-bottom list-item-half">[[amenity.description]]</div>
-              </template>
-            </div>
-              <template is="dom-if" if="{{showMoreAmenities}}">
-                <a href="javascript:void(0);"
-                  class="link-style block margin-bottom"
-                  on-click="onShowAmenities">more</a>
-              </template>
-              <template is="dom-if" if="{{!showMoreAmenities}}">
-                <a href="javascript:void(0);"
-                  class="link-style block margin-bottom"
-                  on-click="onShowAmenities">less</a>
-              </template>
-            <div class="border-bottom margin-bottom"></div>
-          </template>
-          <template is="dom-if" if="{{displayPOI.length}}">
-            <div class="margin-bottom font-semi font-14 primary-text">Points of interest</div>
-            <div class="layout horizontal wrap">
-              <template is="dom-repeat" items="{{displayPOI}}" as="poi">
-                <div class="margin-bottom list-item-half">[[poi]]</div>
-              </template>
-            </div>
-              <template is="dom-if" if="{{showMorePointsOfInterest}}">
-                <a href="javascript:void(0);"
-                  class="link-style block margin-bottom"
-                  on-click="onShowPOI">more</a>
-              </template>
-              <template is="dom-if" if="{{!showMorePointsOfInterest}}">
-                <a href="javascript:void(0);"
-                   class="link-style block margin-bottom"
-                   on-click="onShowPOI">less</a>
-              </template>
-            <div class="border-bottom margin-bottom"></div>
-          </template>
-        </div>
+        <t-hotel-details-tab descriptions="{{itinerary.descriptions}}"
+          amenities="{{itinerary.amenities}}"
+          pointsOfInterest="{{itinerary.pointsOfInterest}}">
+        </t-hotel-details-tab>
       </div>
     </iron-pages>
 
@@ -155,13 +111,22 @@
 
     <paper-toast id="toast"></paper-toast>
 
-    <t-app-footer email="swat@tavisca.com" phone="800-459-1597"></t-app-footer>
+    <t-app-footer email="{{supportEmail}}" phone="{{supportPhone}}"></t-app-footer>
+    <paper-fab id="themeFab"
+      mini
+      icon="icons:settings"
+      on-tap="redirectToCustomize"
+      title="change theme">
+    </paper-fab>
 
   </template>
 
-  <script src="base.js"></script>
-  <script src="mixin-search-recap.js"></script>
-  <script src="details.js"></script>
+  <!-- TODO: somehow placing this below the app-footer causes image carousel to break -->
+
+  <script src="scripts/base.js"></script>
+  <script src="scripts/mixin-settings.js"></script>
+  <script src="scripts/mixin-search-recap.js"></script>
+  <script src="scripts/details.js"></script>
 
 </body>
 

@@ -43,20 +43,27 @@
 
     <t-communication phone="{{phoneNumber}}" email="{{email}}"></t-communication>
 
-    <div class="horizontal layout" style="padding:10px;">
-      <t-button class="primary flex"
+    <div style="padding:10px;">
+      <t-button class="primary"
         noink
         label="Continue"
         on-click="onContinue">
       </t-button>
     </div>
 
-    <t-app-footer email="swat@tavisca.com" phone="800-459-1597"></t-app-footer>
+    <t-app-footer email="{{supportEmail}}" phone="{{supportPhone}}"></t-app-footer>
+    <paper-fab id="themeFab"
+      mini
+      icon="icons:settings"
+      on-tap="redirectToCustomize"
+      title="change theme">
+    </paper-fab>
 
   </template>
 
-  <script src="base.js"></script>
-  <script src="guestinfo.js"></script>
+  <script src="scripts/base.js"></script>
+  <script src="scripts/mixin-settings.js"></script>
+  <script src="scripts/guestinfo.js"></script>
 
 </body>
 

@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="initial-scale=1, maximum-scale=1">
+
+  <title>Hotel Search Demo | Create Theme</title>
+
+  <script src="bower_components/webcomponentsjs/webcomponents-lite.min.js"></script>
+
+  <link rel="import" href="elements.html">
+  <link rel="stylesheet" href="main.css">
+  <style is="custom-style" include="custom-style"></style>
+
+  <style>
+    body {
+      font-family: 'Open Sans';
+    }
+
+    header,
+    #themeOptions,
+    #submit,
+    #branding {
+      padding: 10px;
+    }
+    
+    #themeOptions t-colorpicker,
+    #themeOptions t-input {
+      margin: 10px 0;
+    }
+
+    header {
+      font-size: 18px;
+      text-align: center;
+      border-bottom: 1px solid #EEE;
+    }
+
+    #submit {
+      position: fixed;
+      bottom: 0;
+      right: 0;
+      left: 0;
+      background-color: #E1E1E1;
+      display: flex;
+      justify-content: center;
+    }
+
+    #submit > t-button:nth-child(1) {
+      margin-right: 20px;
+    }
+    
+    #space {
+      height: 60px;
+    }
+
+    #branding > t-input {
+      margin-bottom: 20px;
+    }
+
+    .number {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .number > t-input {
+      flex: 1 1 auto;
+    }
+
+    .number > span {
+      width: 24px;
+      color: #BBBBBB;
+    }
+  </style>
+</head>
+
+<body unresolved>
+
+  <template is="dom-bind" id="app">
+
+    <t-header icon="icons:arrow-back"
+      normal-heading
+      label="Customize Theme"
+      url="{{searchPageUrl}}">
+    </t-header>
+
+    <t-section-header label="Branding"></t-section-header>
+    <div id="branding">
+      <t-input
+        auto-validate
+        pattern="https?://.+"
+        error-message="Has to be a url"
+        label="Logo Url"
+        data-key="logo-url"
+        on-value-changed="persistValue"
+        value="{{logoUrl}}">
+      </t-input>
+
+      <t-input
+        auto-validate
+        pattern=".+@.+\..+"
+        error-message="Has to be an email id"
+        label="Privacy Policy Url"
+        data-key="support-email"
+        on-value-changed="persistValue"
+        value="{{supportEmail}}">
+      </t-input>
+
+      <t-input
+        auto-validate
+        pattern="[0-9\-+]+"
+        error-message="Has to be a phone number"
+        label="Privacy Policy Url"
+        data-key="support-phone"
+        on-value-changed="persistValue"
+        value="{{supportPhone}}">
+      </t-input>
+
+      <t-input
+        auto-validate
+        pattern="https?://.+"
+        error-message="Has to be a url"
+        label="Terms Of Service Url"
+        data-key="tos-url"
+        on-value-changed="persistValue"
+        value="{{tosUrl}}">
+      </t-input>
+
+      <t-input
+        auto-validate
+        pattern="https?://.+"
+        error-message="Has to be a url"
+        label="Privacy Policy Url"
+        data-key="policy-url"
+        on-value-changed="persistValue"
+        value="{{policyUrl}}">
+      </t-input>
+    </div>
+
+    <t-section-header label="Choose Theme"></t-section-header>
+    <paper-listbox id="themes" selected="{{theme}}" on-selected-changed="changeTheme">
+      <paper-item>Default</paper-item>
+      <paper-item>Red</paper-item>
+      <paper-item>Purple</paper-item>
+    </paper-listbox>
+
+    <t-section-header label="Customize Theme"></t-section-header>
+    <div id="themeOptions">
+      <template is="dom-repeat" items="{{themeOptions}}" as="option">
+        <template is="dom-if" if="{{option.isColor}}">
+          <t-colorpicker
+            label="{{option.label}}"
+            value="{{option.value}}"
+            color="{{option.value}}">
+          </t-colorpicker>
+        </template>
+        <template is="dom-if" if="{{option.isNumber}}">
+          <div class="number">
+            <t-input
+              auto-validate
+              pattern="[0-9]+|([0-9]*\.[0-9]+)"
+              error-message="Has to be a number"
+              label="{{option.label}}"
+              value="{{option.value}}">
+            </t-input>
+            <span>{{option.unit}}</span>
+          </div>
+        </template>
+        <template is="dom-if" if="{{option.isString}}">
+          <t-input
+            label="{{option.label}}"
+            value="{{option.value}}">
+          </t-input>
+        </template>
+      </template>
+    </div>
+
+    <div id="space"></div>
+
+    <div id="submit">
+      <t-button class="primary" on-tap="applyTheme" label="Apply"></t-button>
+      <t-button class="primary" on-tap="downloadTheme" label="Download"></t-button>
+    </div>
+
+    <iron-ajax auto="{{!themeOptions}}" handle-as="text" url="{{themeUrl(theme)}}" on-response="parseTheme"></iron-ajax>
+  </template>
+
+  <script src="scripts/base.js"></script>
+  <script src="scripts/mixin-settings.js"></script>
+  <script src="scripts/blob.js"></script>
+  <script src="scripts/file-saver.js"></script>
+  <script src="scripts/customize-theme.js"></script>
+</body>
+
+</html>

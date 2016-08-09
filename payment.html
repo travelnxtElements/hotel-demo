@@ -13,6 +13,7 @@
 
   <link rel="import" href="elements.html">
   <style is="custom-style" include="custom-style"></style>
+  <style is="custom-style" include="iron-flex iron-flex-alignment"></style>
   <link rel="stylesheet" href="main.css">
 
   <style is="custom-style" include="travel-element-styles"></style>
@@ -43,35 +44,14 @@
       url="{{guestinfoPageUrl}}">
     </t-header>
 
-    <!-- FIXME: there should be a trip summary element -->
-    <t-section-header label="Trip summary" style="margin:0"></t-section-header>
-
-    <div  class="section-small font-12 secondary-text">
-      <div class="font-16 font-semi margin-bottom primary-text">
-        {{cartItem.inventory.name}}
-      </div>
-      <div class="margin-bottom">
-        {{stayStartDate}} - {{stayEndDate}}
-      </div>
-      <div class="layout horizontal margin-bottom">
-        <template is="dom-repeat" items="{{starRating}}">
-          <iron-icon class="icon-star" icon="icons:star"></iron-icon>
-        </template>
-      </div>
-      <div id="toggle" hidden>
-        <div class="margin-bottom">
-          {{adultCountText}}
-          <template is="dom-if" if="{{searchCriteria.rooms.0.children.quantity}}">
-            , {{childrenCountText}}
-          </template>
-        </div>
-        <div class="margin-bottom">{{cartItem.inventory.rooms.0.name}}</div>
-
-        <div  class="margin-bottom link-style" on-click="showPolicies">policy</div>
-        <div class="margin-bottom">{{cartItem.inventory.address}}</div>
-      </div>
-      <div id="more" class="link-style" on-click="toggle">more</div>
-    </div>
+    <t-hotel-trip-summary itinerary-name="{{cartItem.inventory.name}}"
+      stay-duration="{{stayStartDate}} - {{stayEndDate}}"
+      star-rating="{{starRating}}"
+      guest-count="{{getGuestCount(cartItem.inventory.rooms.0.children.quantity)}}"
+      itinerary-description="[[cartItem.inventory.rooms.0.name]]"
+      itinerary-address="{{cartItem.inventory.address}}">
+        <div class="margin-bottom link-style policy" on-click="showPolicies">policy</div>
+    </t-hotel-trip-summary>
 
     <t-overlay id="overlay" header="Policies">
       <t-hotel-room-policy-list policies="{{displayPolicies}}">
@@ -100,10 +80,10 @@
       <div class="flex font-12 secondary-text">
         I have read and accept the
         <a class="link-style" on-click="showPolicies">Booking Policies</a>,
-        <a href="http://www.bluegreenvacations.com/terms-of-use"
+        <a href="{{tosUrl}}"
           class="link-style" target="_blank">Terms & Conditions</a>
         and
-        <a href="http://www.bluegreenvacations.com/privacy-policy"
+        <a href="{{policyUrl}}"
           class="link-style" target="_blank">Privacy Policy</a>.
       </div>
     </div>
@@ -133,13 +113,20 @@
 
     <paper-toast id="toast"></paper-toast>
 
-    <t-app-footer email="swat@tavisca.com" phone="800-459-1597"></t-app-footer>
+    <t-app-footer email="{{supportEmail}}" phone="{{supportPhone}}"></t-app-footer>
+    <paper-fab id="themeFab"
+      mini
+      icon="icons:settings"
+      on-tap="redirectToCustomize"
+      title="change theme">
+    </paper-fab>
 
   </template>
 
-  <script src="base.js"></script>
-  <script src="mixin-trip-summary.js"></script>
-  <script src="payment.js"></script>
+  <script src="scripts/base.js"></script>
+  <script src="scripts/mixin-settings.js"></script>
+  <script src="scripts/mixin-trip-summary.js"></script>
+  <script src="scripts/payment.js"></script>
 
 </body>
 

@@ -19,20 +19,29 @@
 <body unresolved>
 
   <template is="dom-bind" id="app">
-    <!-- FIXME: I don't want the back button. How do I disable it?. -->
-    <t-header icon="" url="">
-      <img alt="Travlnxt" class="style-scope t-app-footer" src="https://s3.amazonaws.com/tavisca.samplebucket/124850/Images/c9154425-43be-4a7a-9d44-463c97a58040">
-    </t-header>
+    <paper-toolbar>
+      <img alt="Travlnxt" src="{{logoUrl}}">
+    </paper-toolbar>
 
-    <t-hotel-search id="searchComponent"></t-hotel-search>
-    <t-hotel-search-provider id="searchProvider"
-      api-base-url="{{apiBaseUrl}}"
-      api-relative-url="{{apiSearchUrl}}"
-      auth-token="{{authToken}}">
-    </t-hotel-search-provider>
+    <t-hotel-search id="searchComponent"
+      data-url="[[apiBaseUrl]]api/content/autosuggest/"
+      query-params="token=[[tokenResponse.authenticationToken]]">
+    </t-hotel-search>
 
-    <t-mystique-auth id="mysAuth"
-      name="mystiquedemo"
+    <t-hotel-search-api-decorator
+        input="[[searchedData]]"
+        output="{{searchRequest}}">
+    </t-hotel-search-api-decorator>
+
+    <t-search-api data="[[searchRequest]]"
+        api-base-url="[[apiBaseUrl]]"
+        api-relative-url="api/hotel/search"
+        auth-token="[[tokenResponse.authenticationToken]]"
+        on-t-search-api-success="_successHandler"
+        on-t-search-api-error="_errorHandler">
+    </t-search-api>
+
+    <t-mystique-auth name="mystiquedemo"
       cid="20043"
       token-response="{{tokenResponse}}"
       url="[[authApiEndpoint]]">
@@ -40,12 +49,18 @@
 
     <paper-toast id="toast"></paper-toast>
 
-    <t-app-footer email="swat@tavisca.com" phone="800-459-1597"></t-app-footer>
-
+    <t-app-footer email="{{supportEmail}}" phone="{{supportPhone}}"></t-app-footer>
+    <paper-fab id="themeFab"
+      mini
+      icon="icons:settings"
+      on-tap="redirectToCustomize"
+      title="change theme">
+    </paper-fab>
   </template>
 
-  <script src="base.js"></script>
-  <script src="search.js"></script>
+  <script src="scripts/base.js"></script>
+  <script src="scripts/mixin-settings.js"></script>
+  <script src="scripts/search.js"></script>
 
 </body>
 

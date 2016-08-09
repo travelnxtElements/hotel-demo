@@ -1,5 +1,36 @@
 body {
   margin: 0;
+  position: relative;
+  transform: translate3d(0, 0, 0);
+}
+
+paper-item {
+  cursor: pointer;
+}
+
+#themeFab {
+  position: absolute;
+  top: 60px;
+  right: 5px;
+  color: #FFF;
+}
+
+t-app-footer img {
+  display: none;
+}
+
+paper-item {
+  cursor: pointer;
+}
+
+.t-list-0 .absolute.t-list {
+  position: static;
+  background: transparent;
+  z-index: 0;
+}
+
+t-button.t-button-0 {
+  display: block;
 }
 
 /* mobile is the default mode, extra handling needed for desktop */
@@ -14,18 +45,11 @@ body {
     margin-top: 20px;
     background-color: white;
     border-radius: 4px;
-    position: relative;
     min-height: 200px;
   }
 
-  /* FIXME: the overlay should adjust according to the parent */
-  .absolute {
-    left: 0;
-    right: 0;
-  }
-
-  /* FIXME: fullpage loader should have position as absolute */
-  .modal.t-fullpage-loader {
-    position: absolute !important;
+  t-section-header {
+    padding: 10px 10px 0 10px;
+    background-color: #E1E1E1;
   }
 }

@@ -22,6 +22,7 @@ mkcp bower_components/webcomponentsjs/webcomponents-lite.min.js
 
 printf "%-20s: Copy the pngs in credit card\n" "Copy"
 mkcp bower_components/t-creditcard/**/*.png
+mkcp bower_components/t-creditcard/*.png
 
 printf "%-20s: Run the build step\n" "Vulcanize"
 vulcanize --inline-script --inline-css --strip-comments elements.html | \

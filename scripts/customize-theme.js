@@ -67,7 +67,7 @@
   };
 
   app.applyTheme = function() {
-    let brandingInputs = document.querySelectorAll('#branding > *');
+    let brandingInputs = document.querySelectorAll('#branding > t-input');
 
     brandingInputs = Array.from(brandingInputs);
     brandingInputs.forEach(el => {

@@ -17,7 +17,8 @@
 
     qs = qs.join('&');
 
-    return 'http://theme-atomproject.rhcloud.com/theme.html?' + qs;
+    let proto = window.location.protocol;
+    return `${proto}//theme-atomproject.rhcloud.com/theme.html?` + qs;
   }
 
   HotelDemo.mixinSettings = function(app) {

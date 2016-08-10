@@ -2,23 +2,8 @@
   window.HotelDemo = window.HotelDemo || {};
   let HotelDemo = window.HotelDemo;
 
-  let app = document.getElementById('app');
-  HotelDemo.mixinSettings(app);
-
-  let themeOptions = HotelDemo.getItem('theme-options');
-
-  app.searchPageUrl = document.referrer;
-
-  app.changeTheme = function(ev) {
-    let theme = ev.detail.value;
-    app.switchTheme(theme);
-    HotelDemo.setItem('theme', theme);
-  };
-
-  app.parseTheme = function(ev) {
-    let resp = ev.detail.response;
-
-    app.themeOptions = resp.split('\n')
+  function toThemeOptions(themeFile) {
+    return themeFile.split('\n')
       .filter(line => /--[\w\-]+/.test(line))
       .map(line => {
         let [, name, value] = line.match(/(--[\w\-]+)\s*:\s*([^;]+);/);
@@ -47,18 +32,55 @@
           isString: !(isColor || isNumber)
         };
       });
+  }
+
+  function getPrevUrl() {
+    let url = document.referrer;
+
+    if (url === window.location.href) {
+      return HotelDemo.getPageUrl('/');
+    }
+
+    return url;
+  }
+
+  let app = document.getElementById('app');
+  HotelDemo.mixinSettings(app);
+
+  let themeOptions = HotelDemo.getItem('theme-options');
+
+  app.defaultThemeUrl = app.themes[0].url;
+  app.searchPageUrl = getPrevUrl();
+
+  app.changeTheme = function(ev) {
+    let theme = ev.detail.value;
+    app.switchTheme(theme);
+  };
+
+  app.hideCustom = function(theme) {
+    return theme !== 3;
+  };
+
+  app.parseTheme = function(ev) {
+    let themeFile = ev.detail.response;
+    app.themeOptions = toThemeOptions(themeFile);
   };
 
   app.applyTheme = function() {
+    let brandingInputs = document.querySelectorAll('#branding > t-input');
+
+    brandingInputs = Array.from(brandingInputs);
+    brandingInputs.forEach(el => {
+      let key = el.getAttribute('data-key');
+      let value = el.value;
+
+      HotelDemo.setItem(key, value);
+    });
+
+    HotelDemo.setItem('theme', app.theme);
     HotelDemo.setItem('theme-options', app.themeOptions);
-    Polymer.Base.importHref(app.getThemeUrl(app.themeOptions));
-  };
 
-  app.persistValue = function(ev) {
-    let key = ev.srcElement.getAttribute('data-key');
-    let value = ev.detail.value;
-
-    HotelDemo.setItem(key, value);
+    app.switchTheme(app.theme);
   };
 
   app.downloadTheme = function(ev) {

@@ -45,6 +45,7 @@
     </t-header>
 
     <t-list id="results"
+      load-more
       data-api="[[apiBaseUrl]]api/hotel/results/[[sid]]/rates?token=[[token]]&$top=20&$select=[[selections]]"
       filter-api="[[apiBaseUrl]]api/hotel/filter/[[sid]]/rates?token=[[token]]"
       filter-results-api="[[apiBaseUrl]]api/hotel/results/filter/[[sid]]/rates?token=[[token]]&$top=20&$select=[[selections]]"

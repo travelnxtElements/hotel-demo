@@ -6,12 +6,16 @@
 Show the VD and point out the various flows in a typical hotel booking
 application.
 
+https://projects.invisionapp.com/share/BZ75ZOMU7#/screens/145334587
+
 2. Application Walk-Through
 We've made a simple hotel booking application to demo the numerous advantages
 of component driven development. The demo application only has a subset of
 the features that you see in the VD but the purpose of this application is to
 highlight the component driven development.
+
 Do a walk through of the demo.
+https://travelnxtelements.github.io/hotel-demo/
 
 Save confirmation page.
 

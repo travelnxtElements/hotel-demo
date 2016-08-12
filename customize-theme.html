@@ -26,7 +26,7 @@
     #branding {
       padding: 10px;
     }
-    
+
     #themeOptions t-colorpicker,
     #themeOptions t-input {
       margin: 10px 0;
@@ -54,7 +54,7 @@
     #submit > t-button:nth-child(1) {
       margin-right: 20px;
     }
-    
+
     #space {
       height: 60px;
     }
@@ -86,11 +86,11 @@
 
     <t-header icon="icons:arrow-back"
       normal-heading
-      label="Customize Theme"
+      label="Customize Your Theme"
       url="{{searchPageUrl}}">
     </t-header>
 
-    <t-section-header label="Branding"></t-section-header>
+    <t-section-header label="Your Agency's details"></t-section-header>
     <div id="branding">
       <t-input
         auto-validate
@@ -105,7 +105,7 @@
         auto-validate
         pattern=".+@.+\..+"
         error-message="Has to be an email id"
-        label="Privacy Policy Url"
+        label="Agency's Email Id"
         data-key="support-email"
         value="{{supportEmail}}">
       </t-input>
@@ -114,7 +114,7 @@
         auto-validate
         pattern="[0-9\-+]+"
         error-message="Has to be a phone number"
-        label="Privacy Policy Url"
+        label="Agency's Contact No"
         data-key="support-phone"
         value="{{supportPhone}}">
       </t-input>
@@ -123,7 +123,7 @@
         auto-validate
         pattern="https?://.+"
         error-message="Has to be a url"
-        label="Terms Of Service Url"
+        label="Terms and Conditions Url"
         data-key="tos-url"
         value="{{tosUrl}}">
       </t-input>
